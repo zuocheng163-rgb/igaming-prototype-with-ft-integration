@@ -358,17 +358,26 @@ async function placeBet(bet) {
         cash_out_value: null,
         placed_ts: new Date().toISOString(),
         settled_ts: null,
-        legs: resolvedLegs.map(l => ({
-            id: nextSelectionId++,
-            bet_id: betId,
-            selection_id: l.selection.id,
-            selection_name: l.selection.name,
-            event_home: l.event.home_team,
-            event_away: l.event.away_team,
-            market_type: l.market.type,
-            odds_at_placement: l.odds_at_placement,
-            status: 'pending',
-        })),
+        legs: resolvedLegs.map(l => {
+            const league = memLeagues.find(lg => lg.id === l.event.league_id);
+            const sport = league ? memSports.find(s => s.id === league.sport_id) : null;
+            return {
+                id: nextSelectionId++,
+                bet_id: betId,
+                selection_id: l.selection.id,
+                selection_name: l.selection.name,
+                event_home: l.event.home_team,
+                event_away: l.event.away_team,
+                market_type: l.market.type,
+                odds_at_placement: l.odds_at_placement,
+                status: 'pending',
+                // FT enrichment fields
+                league_name: league?.name || 'Undefined',
+                sport_name: sport?.name || 'Undefined',
+                event_start_ts: l.event.start_ts,
+                is_live: l.event.status === 'live',
+            };
+        }),
     };
 
     memBets.push(betRecord);
@@ -381,6 +390,13 @@ async function placeBet(bet) {
         combined_odds: combinedOdds,
         message: 'Bet placed successfully',
     };
+}
+
+/**
+ * getBet(betId) → full bet record including enriched legs, or null
+ */
+async function getBet(betId) {
+    return memBets.find(b => b.id === betId) || null;
 }
 
 /**
@@ -457,6 +473,7 @@ async function settle(eventId) {
     }
 
     // Settle bets
+    const settledBets = [];
     for (const bet of memBets) {
         if (bet.status !== 'active') continue;
         const relevantLegs = bet.legs.filter(l =>
@@ -475,11 +492,12 @@ async function settle(eventId) {
             const anyVoid = bet.legs.some(l => l.status === 'void');
             bet.status = anyVoid ? 'void' : (allWon ? 'won' : 'lost');
             bet.settled_ts = new Date().toISOString();
+            settledBets.push(bet);
             settled++;
         }
     }
 
-    return { settled };
+    return { settled, settledBets };
 }
 
 module.exports = {
@@ -490,6 +508,7 @@ module.exports = {
     subscribeOdds,
     getOddsSnapshot,
     placeBet,
+    getBet,
     cashOutQuote,
     acceptCashOut,
     getPlayerBets,

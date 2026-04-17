@@ -5,6 +5,7 @@ const router = express.Router();
 const { authenticateRequest } = require('../middleware/auth');
 const provider = require('../services/sportsbook/mock-provider');
 const { logger } = require('../services/logger');
+const { pushEvent } = require('../services/ft-integration');
 
 // ── GET /api/v1/sports ────────────────────────────────────────────────────────
 // List all sports with event counts
@@ -118,6 +119,24 @@ router.post('/bets', authenticateRequest, async (req, res) => {
             legs,
         });
 
+        // Fire FT SPORTSBOOK Bet event (non-blocking)
+        provider.getBet(result.bet_id).then(fullBet => {
+            if (!fullBet) return;
+            return pushEvent(player_id, 'sportsbook', {
+                activity_id: fullBet.id,
+                activity_id_reference: fullBet.id,
+                type: 'Bet',
+                bet_type: fullBet.bet_type,
+                amount: fullBet.stake,
+                stake: fullBet.stake,
+                wager_amount: fullBet.stake,
+                currency: fullBet.currency,
+                combined_odds: result.combined_odds,
+                is_cashout: false,
+                legs: fullBet.legs,
+            });
+        }).catch(err => logger.warn('[Sportsbook] FT Bet event failed', { error: err.message }));
+
         res.status(201).json(result);
     } catch (err) {
         logger.error('[Sportsbook] placeBet failed', { error: err.message });
@@ -148,6 +167,28 @@ router.post('/bets/:id/cash-out', authenticateRequest, async (req, res) => {
         if (accept && quote_id) {
             // Accept the cash-out
             const result = await provider.acceptCashOut(betId, quote_id);
+
+            // Fire FT SPORTSBOOK Settlement event for cash-out (non-blocking)
+            provider.getBet(betId).then(fullBet => {
+                if (!fullBet) return;
+                return pushEvent(player_id, 'sportsbook', {
+                    activity_id: `settle-co-${betId}-${Date.now()}`,
+                    activity_id_reference: betId,
+                    type: 'Settlement',
+                    settlement_type: 'Cancelled',  // FT: cash-out = Cancelled
+                    bet_type: fullBet.bet_type,
+                    amount: result.cash_out_value,
+                    stake: fullBet.stake,
+                    wager_amount: fullBet.stake,
+                    currency: fullBet.currency,
+                    combined_odds: fullBet.stake > 0 ? fullBet.potential_payout / fullBet.stake : 1,
+                    is_cashout: true,
+                    reference_bet_amount: fullBet.stake,
+                    reference_bet_real_amount: fullBet.stake,
+                    legs: fullBet.legs,
+                });
+            }).catch(err => logger.warn('[Sportsbook] FT Cash-out Settlement event failed', { error: err.message }));
+
             return res.json(result);
         }
 
@@ -189,7 +230,34 @@ router.post('/events/:id/settle', authenticateRequest, async (req, res) => {
             return res.status(403).json({ error: 'FORBIDDEN' });
         }
         const result = await provider.settle(req.params.id);
-        res.json(result);
+
+        // Fire FT SPORTSBOOK Settlement events for each settled bet (non-blocking)
+        const settleTs = Date.now();
+        for (const bet of result.settledBets || []) {
+            const settlementTypeMap = { won: 'Won', lost: 'Lost', void: 'Refunded' };
+            const settlementType = settlementTypeMap[bet.status] || 'Lost';
+            const settlementAmount = bet.status === 'won' ? (bet.potential_payout || 0) : 0;
+            const combinedOdds = bet.stake > 0 ? bet.potential_payout / bet.stake : 1;
+
+            pushEvent(bet.player_id, 'sportsbook', {
+                activity_id: `settle-${bet.id}-${settleTs}`,
+                activity_id_reference: bet.id,
+                type: 'Settlement',
+                settlement_type: settlementType,
+                bet_type: bet.bet_type,
+                amount: settlementAmount,
+                stake: bet.stake,
+                wager_amount: bet.stake,
+                currency: bet.currency,
+                combined_odds: combinedOdds,
+                is_cashout: false,
+                reference_bet_amount: bet.stake,
+                reference_bet_real_amount: bet.stake,
+                legs: bet.legs,
+            }).catch(err => logger.warn('[Sportsbook] FT Settlement event failed', { betId: bet.id, error: err.message }));
+        }
+
+        res.json({ settled: result.settled });
     } catch (err) {
         logger.error('[Sportsbook] settle failed', { error: err.message });
         res.status(err.message === 'EVENT_NOT_FOUND' ? 404 : 500).json({ error: err.message });

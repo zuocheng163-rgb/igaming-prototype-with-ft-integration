@@ -18,6 +18,7 @@ const EVENT_CONFIG = {
     'casino': { path: '/v1/integration/casino', method: 'POST' },
     'bonus': { path: '/v1/integration/bonus', method: 'POST' },
     'balance': { path: '/v1/integration/user/balances', method: 'POST' },
+    'sportsbook': { path: '/v1/integration/sports', method: 'POST' },
 
     // Aliases for internal events
     'deposit': { path: '/v1/integration/payment', method: 'POST' },
@@ -44,7 +45,8 @@ const FT_MESSAGE_TYPES = {
     'consent': 'USER_CONSENTS_V2',
     'login': 'LOGIN_V2',
     'registration': 'USER_CREATE_V2',
-    'logout': 'LOGOUT'
+    'logout': 'LOGOUT',
+    'sportsbook': 'SPORTSBOOK'
 };
 
 /**
@@ -173,6 +175,61 @@ const pushEventWithRetry = async (userId, eventType, payload, options = {}, retr
                 user_id: userId,
                 timestamp,
                 fasttrack_references: payload.fasttrack_references
+            };
+        } else if (eventType === 'sportsbook') {
+            // Map internal bet_type (SINGLE/MULTI/SYSTEM) to FT enum (Single/Multi/System)
+            const betTypeMap = { SINGLE: 'Single', MULTI: 'Multi', SYSTEM: 'System' };
+            const ftBetType = betTypeMap[(payload.bet_type || '').toUpperCase()] || 'Single';
+
+            // Build bets[] array from stored leg data
+            // Each leg has: event_home, event_away, market_type, selection_name,
+            //               odds_at_placement, league_name, sport_name, event_start_ts, is_live
+            const bets = (payload.legs || []).map(leg => ({
+                event_name: `${leg.event_home} vs ${leg.event_away}`,
+                tournament_name: leg.league_name || 'Undefined',
+                sports_name: leg.sport_name || 'Undefined',
+                match_start: leg.event_start_ts || timestamp,
+                market: leg.market_type || 'Undefined',
+                odds: parseFloat(leg.odds_at_placement || 1.0),
+                is_live: leg.is_live || false,
+                is_free_bet: payload.is_free_bet || false,
+                is_risk_free_bet: payload.is_risk_free_bet || false,
+                outcomes: [{
+                    criterion_name: leg.market_type || 'Undefined',
+                    outcome_label: leg.selection_name || 'Undefined',
+                }],
+            }));
+
+            requestBody = {
+                activity_id: payload.activity_id,
+                activity_id_reference: payload.activity_id_reference || payload.activity_id,
+                user_id: userId,
+                type: payload.type || 'Bet',           // ENUM: Bet, Settlement
+                status: payload.status || 'Approved',  // ENUM: Approved, Rollback
+                bet_type: ftBetType,                   // ENUM: Single, Multi, System
+                timestamp,
+                amount: parseFloat(payload.amount || payload.stake || 0),
+                wager_amount: parseFloat(payload.wager_amount || payload.stake || 0),
+                bonus_wager_amount: parseFloat(payload.bonus_wager_amount || 0),
+                locked_wager_amount: parseFloat(payload.locked_wager_amount || 0),
+                odds: parseFloat(payload.combined_odds || payload.odds || 1.0),
+                currency: payload.currency || 'EUR',
+                exchange_rate: parseFloat(payload.exchange_rate || 1.0),
+                origin,
+                is_cashout: payload.is_cashout || false,
+                bets,
+                ...(payload.settlement_type && { settlement_type: payload.settlement_type }),
+                ...(payload.balance_before !== undefined && { balance_before: parseFloat(payload.balance_before) }),
+                ...(payload.balance_after !== undefined && { balance_after: parseFloat(payload.balance_after) }),
+                ...(payload.user_bonus_id && { user_bonus_id: payload.user_bonus_id }),
+                // Settlement-only reference fields
+                ...(payload.type === 'Settlement' && {
+                    reference_bet_amount: parseFloat(payload.reference_bet_amount || payload.stake || 0),
+                    reference_bet_real_amount: parseFloat(payload.reference_bet_real_amount || payload.stake || 0),
+                    reference_bet_bonus_amount: parseFloat(payload.reference_bet_bonus_amount || 0),
+                    reference_bet_locked_amount: parseFloat(payload.reference_bet_locked_amount || 0),
+                    reference_bet_exchange_rate: parseFloat(payload.reference_bet_exchange_rate || 1.0),
+                }),
             };
         }
 
