@@ -16,6 +16,7 @@
 
 const { logger } = require('./logger');
 const { AfaError } = require('../middleware/afa-error');
+const BonusManagementService = require('./bonus-management-service');
 
 // Underlying platform services
 const InterventionService = require('./intervention');
@@ -137,6 +138,95 @@ class AfaActionsService {
     }
 
     /**
+     * T1: Fetch active and historical restrictions for a player.
+     * Mocks fetching an active restriction if a recent one was applied.
+     */
+    async getPlayerRestrictions(brandId, playerId, statusFilter = null) {
+        if (!this.db.client) return { active_restriction: null, history: [] };
+
+        // For this proposal implementation, we query recent T2 restrict actions
+        // from the audit log to mock an "active" restriction.
+        const { data: restrictLogs } = await this.db.client
+            .from('agent_audit_log')
+            .select('*')
+            .eq('brand_id', String(brandId))
+            .eq('target_entity', playerId)
+            .eq('action_type', 'player:restrict:pre-auth')
+            .order('occurred_at', { ascending: false })
+            .limit(10);
+
+        let activeRestriction = null;
+        let history = [];
+
+        if (restrictLogs && restrictLogs.length > 0) {
+            history = restrictLogs.map(log => ({
+                id: log.id,
+                type: log.execution_result?.restriction_type || 'UNKNOWN',
+                applied_at: log.occurred_at,
+                agent_id: log.agent_id,
+                reason: log.agent_note || 'Agent applied restriction',
+            }));
+
+            // Mock an active restriction if the most recent restrict action was within 24 hours
+            // and we haven't formally unrestricted them (simplification for the proposal).
+            const lastLog = restrictLogs[0];
+            const logDate = new Date(lastLog.occurred_at);
+            const now = new Date();
+            if ((now - logDate) < 24 * 60 * 60 * 1000) {
+                activeRestriction = history[0];
+            }
+        }
+
+        if (statusFilter === 'active') {
+            return { active_restriction: activeRestriction };
+        }
+
+        return {
+            active_restriction: activeRestriction,
+            history: history,
+        };
+    }
+
+    /**
+     * T2: Lift an active restriction on a player.
+     */
+    async unrestrictPlayer(params) {
+        const { brandId, agentId, playerId, reason, requestId, skipPolicy = false, agentNote } = params;
+
+        if (!skipPolicy) {
+            const policy = await this.checkPolicy(brandId, 'player:unrestrict:pre-auth');
+            if (!policy.allowed) {
+                await this.logViolation(brandId, agentId, 'player:unrestrict:pre-auth', 'max_daily_count', null, policy.limit, requestId);
+                throw new AfaError('POLICY_VIOLATION', 'business_rule', 403, 'contact_operator_admin', { detail: policy.reason });
+            }
+        }
+
+        // Mock checking for self-exclusion (in reality this checks the player model)
+        const currentRestrictions = await this.getPlayerRestrictions(brandId, playerId, 'active');
+        if (currentRestrictions.active_restriction && currentRestrictions.active_restriction.type === 'SELF_EXCLUSION') {
+            throw new AfaError('RESTRICTION_SELF_EXCLUDED', 'business_rule', 409, 'escalate_to_human', { 
+                detail: 'Cannot unrestrict a self-excluded player via automated API. Must be escalated.' 
+            });
+        }
+
+        if (!currentRestrictions.active_restriction) {
+            throw new AfaError('NO_ACTIVE_RESTRICTION', 'business_rule', 409, 'check_player_status', { 
+                detail: 'The player does not currently have an active restriction to lift.' 
+            });
+        }
+
+        // Execute: In reality this would clear the restriction field in the player_profiles or restrictions table
+        logger.info('[AFA Actions] Unrestricting player', { playerId, agentId });
+
+        return {
+            success: true,
+            player_id: playerId,
+            status: 'unrestricted',
+            timestamp: new Date().toISOString(),
+        };
+    }
+
+    /**
      * T2: Forfeit a bonus for a player.
      */
     async forfeitBonus(params) {
@@ -237,31 +327,99 @@ class AfaActionsService {
      * T2: Create an escalation (T3 pending approval).
      */
     async createEscalation(params) {
-        const { brandId, agentId, type, targetEntity, payload, reason, requestId } = params;
+        const { brandId, agentId, type, targetEntity, payload, reason, agentNote, requestId } = params;
 
         // Escalations are always allowed within the T2 scope as they are "proposals"
         const { data, error } = await this.db.client
             .from('pending_approvals')
             .insert({
-                brand_id: Number(brandId),
+                tenant_id: String(brandId),
                 agent_id: agentId,
                 action_type: type,
                 target_entity: targetEntity,
                 payload: payload,
-                reason: reason,
-                status: 'pending',
-                request_id: requestId,
+                policy_reason: reason || 'Escalated by agent',
+                agent_note: agentNote || null,
+                status: 'pending'
             })
             .select()
             .single();
 
-        if (error) throw new Error('Failed to create escalation');
+        if (error) {
+            console.error('[AFA Actions] DB Insert Error (Pending Approvals):', error);
+            throw new Error('Failed to create escalation: ' + JSON.stringify(error));
+        }
 
         return {
             success: true,
             approval_id: data.id,
             status: 'pending_approval',
             message: 'Action exceeds pre-authorised bounds. Escalated for human review.',
+        };
+    }
+
+    /**
+     * T3: Propose forfeiture of a bonus template across all active holders.
+     */
+    async proposeTemplateForfeit(params) {
+        const { brandId, agentId, templateId, reason, agentNote, requestId } = params;
+
+        // Mock checking for active instances of this bonus template
+        // In reality: const { count } = await this.db.client.from('bonuses').select('*', { count: 'exact' }).eq('template_id', templateId).eq('status', 'active');
+        const activeInstancesCount = 142; // Mock value for the proposal showing affected players
+
+        if (activeInstancesCount === 0) {
+            throw new AfaError('NO_ACTIVE_INSTANCES', 'business_rule', 409, 'check_bonus_metrics', { 
+                detail: 'No active instances found for this bonus template.' 
+            });
+        }
+
+        // Mock checking for existing pending approval
+        const { data: existing } = await this.db.client.from('pending_approvals')
+            .select('id')
+            .eq('tenant_id', String(brandId))
+            .eq('action_type', 'bonus:template:forfeit:human-gated')
+            .eq('target_entity', templateId)
+            .eq('status', 'pending');
+
+        if (existing && existing.length > 0) {
+            throw new AfaError('APPROVAL_ALREADY_PENDING', 'business_rule', 409, 'await_approval', { 
+                detail: 'A pending forfeit approval for this template already exists — resolve or cancel it first.' 
+            });
+        }
+
+        // T3 actions automatically trigger an escalation record
+        return await this.createEscalation({
+            brandId,
+            agentId,
+            type: 'bonus:template:forfeit:human-gated',
+            targetEntity: templateId,
+            payload: {
+                template_id: templateId,
+                affected_features: activeInstancesCount,
+                reason: reason
+            },
+            reason: reason || agentNote,
+            agentNote: agentNote,
+            requestId
+        });
+    }
+
+    /**
+     * T3: Final execution of an approved bonus template forfeiture.
+     */
+    async executeTemplateForfeit(brandId, templateId, agentId, requestId) {
+        logger.info('[AFA Actions] Executing template forfeit', { templateId, brandId, agentId });
+
+        // Call the underlying platform service to bulk forfeit instances
+        const result = await BonusManagementService.bulkForfeitByTemplate(brandId, templateId);
+
+        return {
+            success: result.success,
+            template_id: templateId,
+            status: 'bulk_forfeited',
+            affected_instances_count: result.count,
+            timestamp: new Date().toISOString()
         };
     }
 }

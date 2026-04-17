@@ -44,7 +44,7 @@ const MockGame = ({ game, onClose }) => {
 
         try {
             // Debit the bet — backend consumes bonus balance first, then real money
-            await client.debit(BET_AMOUNT);
+            await client.debit(BET_AMOUNT, game?.id);
             setSessionNet(prev => prev - BET_AMOUNT);
             logSDKEvent('WALLET', `Bet placed: -${BET_AMOUNT} EUR`, { gameId: game?.id });
 
@@ -54,7 +54,7 @@ const MockGame = ({ game, onClose }) => {
             if (win > 0) {
                 setLastWin(win);
                 setSessionNet(prev => prev + win);
-                await client.credit(win);
+                await client.credit(win, game?.id);
                 logSDKEvent('WALLET', `Win credited: +${win} EUR`, { gameId: game?.id });
                 setStatusMsg(`🎉 You won €${win.toFixed(2)}!`);
             } else {

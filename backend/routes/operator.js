@@ -1191,6 +1191,49 @@ router.post('/operator/config/api-key', authenticateRequest, async (req, res) =>
     }
 });
 
+// --- Integrations Management Endpoints ---
+
+const ProviderConfigService = require('../services/provider-config');
+
+router.get('/operator/integrations', authenticateRequest, async (req, res) => {
+    const brandId = req.brandId || req.user?.brand_id || 1;
+    try {
+        const integrations = await ProviderConfigService.getIntegrations(brandId);
+        res.json(integrations);
+    } catch (error) {
+        logger.error('Failed to fetch integrations', { error: error.message });
+        res.status(500).json({ error: 'Failed to fetch provider integrations' });
+    }
+});
+
+router.put('/operator/integrations/:slug', authenticateRequest, async (req, res) => {
+    const brandId = req.brandId || req.user?.brand_id || 1;
+    const { slug } = req.params;
+    const { credentials } = req.body;
+    
+    try {
+        await ProviderConfigService.saveCredentials(brandId, slug, credentials);
+        res.json({ success: true, message: 'Credentials updated' });
+    } catch (error) {
+        logger.error('Failed to update integration credentials', { error: error.message, slug });
+        res.status(500).json({ error: 'Failed to update credentials' });
+    }
+});
+
+router.post('/operator/integrations/:slug/toggle', authenticateRequest, async (req, res) => {
+    const brandId = req.brandId || req.user?.brand_id || 1;
+    const { slug } = req.params;
+    const { is_active } = req.body;
+    
+    try {
+        await ProviderConfigService.setStatus(brandId, slug, is_active);
+        res.json({ success: true, message: 'Status updated' });
+    } catch (error) {
+        logger.error('Failed to toggle integration status', { error: error.message, slug });
+        res.status(500).json({ error: 'Failed to update status' });
+    }
+});
+
 // --- DEMO / SHOWCASE ONLY ENDPOINTS ---
 if (process.env.DEMO_MODE === 'true') {
     router.post('/v1/demo/deposit', async (req, res) => {

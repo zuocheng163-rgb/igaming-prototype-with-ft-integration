@@ -99,6 +99,16 @@ router.post('/agent-tokens', authenticateRequest, requireAdmin, async (req, res)
 router.get('/agent-tokens', authenticateRequest, requireAdmin, async (req, res) => {
     try {
         const tenantId = req.brandId || req.user?.brand_id || 1;
+
+        if (req.query.view === 'approvals') {
+            const approvals = await auditService.getPendingApprovals(tenantId);
+            return res.json({
+                approvals,
+                total: approvals.length,
+                tenant_id: tenantId,
+            });
+        }
+
         const includeRevoked = req.query.include_revoked === 'true';
 
         const tokens = await tokenService.listTokens(tenantId, includeRevoked);
@@ -192,12 +202,12 @@ router.post('/approvals/:id/resolve', authenticateRequest, requireAdmin, async (
         }
 
         // 2. Resolve the record in DB
-        const { data, error } = await supabaseService.from('pending_approvals')
+        const { data, error } = await supabaseService.client.from('pending_approvals')
             .update({
                 status: resolution,
                 resolved_at: new Date().toISOString(),
-                resolved_by: adminId,
-                resolution_note: reason
+                approver_id: adminId,
+                rejection_reason: resolution === 'rejected' ? reason || null : null
             })
             .eq('id', id)
             .select()
@@ -247,8 +257,32 @@ router.post('/approvals/:id/resolve', authenticateRequest, requireAdmin, async (
                         note: payload.note
                     });
                     break;
+                case 'bonus:template:forfeit:human-gated':
+                    executionResult = await actionsService.executeTemplateForfeit(
+                        brandId,
+                        payload.template_id,
+                        agentId,
+                        requestId
+                    );
+                    break;
                 default:
                     logger.warn('[AFA Ops] No execution handler for action type', { actionType });
+            }
+
+            // 4. Log the execution in the agent audit trail
+            if (executionResult && executionResult.success) {
+                await auditService.logAgentAction({
+                    tenantId: brandId,
+                    agentId: pending.agent_id,
+                    eventType: 'T3_EXECUTED',
+                    actionType: pending.action_type,
+                    targetEntity: pending.target_entity,
+                    agentNote: `Approved & executed by admin ${adminId}. ${reason || ''}`,
+                    executionResult: executionResult,
+                    policyScope: ['admin_override'],
+                    httpStatus: 200,
+                    requestId: pending.request_id
+                });
             }
         }
 

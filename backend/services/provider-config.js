@@ -86,6 +86,36 @@ class ProviderConfigService {
             lastSync: p.last_success_at
         }));
     }
+
+    static async getIntegrations(brandId) {
+        const { data, error } = await supabaseService.client
+            .from('operator_providers')
+            .select('*')
+            .eq('brand_id', brandId);
+
+        if (error) throw error;
+        
+        // Mask credentials before sending to frontend
+        return data.map(p => {
+            const maskedCreds = {};
+            if (p.credentials) {
+                Object.keys(p.credentials).forEach(key => {
+                    const val = p.credentials[key];
+                    if (typeof val === 'string' && val.length > 8) {
+                        maskedCreds[key] = `${val.substring(0, 4)}...${val.substring(val.length - 4)}`;
+                    } else if (typeof val === 'string' && val.length > 0) {
+                        maskedCreds[key] = '***';
+                    } else {
+                        maskedCreds[key] = val;
+                    }
+                });
+            }
+            return {
+                ...p,
+                credentials: maskedCreds
+            };
+        });
+    }
 }
 
 module.exports = ProviderConfigService;

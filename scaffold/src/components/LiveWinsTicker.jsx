@@ -17,21 +17,30 @@ const WinCard = ({ win }) => {
     const emoji = EMOJIS[win.provider] || EMOJIS.default;
     return (
         <div style={{
-            width: 160, height: 90, flexShrink: 0,
-            background: 'var(--color-surface)',
+            width: 170, height: 90, flexShrink: 0,
+            background: 'rgba(255, 255, 255, 0.03)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.2)',
             borderRadius: 'var(--radius-lg)',
             marginRight: 'var(--space-md)',
             display: 'flex', gap: 10,
             padding: '10px 12px', alignItems: 'center',
+            position: 'relative',
+            overflow: 'hidden'
         }}>
-            <div style={{ width: 50, height: 50, borderRadius: 'var(--radius-md)', background: 'var(--color-surface-raised)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+            {/* Crystal shine overlay */}
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '40%', background: 'linear-gradient(to bottom, rgba(255,255,255,0.06), transparent)', pointerEvents: 'none' }} />
+            
+            <div style={{ width: 50, height: 50, borderRadius: 'var(--radius-md)', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0, boxShadow: 'inset 0 2px 10px rgba(255,255,255,0.05)', zIndex: 1 }}>
                 {emoji}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontFamily: 'DM Sans', color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>{win.game_name}</div>
+            <div style={{ flex: 1, minWidth: 0, zIndex: 1 }}>
+                <div style={{ fontSize: 12, fontFamily: 'DM Sans', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>{win.game_name}</div>
                 <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 1 }}>{win.provider}</div>
                 <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 1 }}>{win.player_handle}</div>
-                <div style={{ fontSize: 13, fontFamily: 'Outfit, sans-serif', fontWeight: 700, color: 'var(--color-win-gold)', marginTop: 2 }}>
+                <div style={{ fontSize: 13, fontFamily: 'Outfit, sans-serif', fontWeight: 700, color: 'var(--color-win-gold)', marginTop: 2, textShadow: '0 0 8px rgba(255, 215, 0, 0.4)' }}>
                     🪙 €{win.win_amount.toLocaleString('en-IE', { minimumFractionDigits: 2 })}
                 </div>
             </div>
@@ -53,7 +62,7 @@ export const LiveWinsTicker = () => {
     const fetchWins = async () => {
         const periodMap = { D: 'daily', W: 'weekly', M: 'monthly' };
         try {
-            const res = await fetch(`${import.meta.env.VITE_NEOSTRIKE_API_URL}/api/live-wins?period=${periodMap[period]}&limit=30`);
+            const res = await fetch(`${import.meta.env.VITE_NEOSTRIKE_API_URL}/api/live-wins?period=${periodMap[period]}&limit=10`);
             if (res.ok) {
                 const data = await res.json();
                 setWins(data.wins || MOCK_WINS);

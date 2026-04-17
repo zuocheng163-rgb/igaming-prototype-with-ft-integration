@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeoStrike — 7-Day Metrics Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f1117; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px; }
+  h1 { font-size: 22px; font-weight: 700; color: #f8fafc; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #64748b; margin-bottom: 28px; }
+  .badge { display: inline-block; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 2px 10px; font-size: 11px; color: #94a3b8; margin-left: 8px; }
+  .badge.live { border-color: #22c55e; color: #22c55e; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .kpi { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 18px 20px; }
+  .kpi-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .kpi-value { font-size: 26px; font-weight: 700; color: #f1f5f9; }
+  .kpi-value.neg { color: #f87171; }
+  .kpi-value.pos { color: #34d399; }
+  .kpi-value.warn { color: #fbbf24; }
+  .kpi-sub { font-size: 11px; color: #64748b; margin-top: 5px; }
+  .kpi-delta { font-size: 12px; margin-top: 4px; }
+  .kpi-delta.up { color: #34d399; }
+  .kpi-delta.down { color: #f87171; }
+
+  .comparison { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px 20px; margin-bottom: 28px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+  .comp-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .comp-row { display: flex; align-items: center; gap: 10px; }
+  .comp-prev { font-size: 13px; color: #475569; text-decoration: line-through; }
+  .comp-arrow { font-size: 13px; color: #64748b; }
+  .comp-curr { font-size: 15px; font-weight: 600; }
+  .comp-curr.better { color: #34d399; }
+  .comp-curr.worse { color: #f87171; }
+  .comp-curr.neutral { color: #f1f5f9; }
+
+  .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 28px; }
+  .chart-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+  .chart-title { font-size: 13px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 16px; }
+
+  .bonus-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .bonus-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; text-align: center; }
+  .bonus-num { font-size: 28px; font-weight: 700; }
+  .bonus-lbl { font-size: 11px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .table-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; overflow: hidden; margin-bottom: 28px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: #0f172a; }
+  th { padding: 10px 16px; text-align: left; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #334155; }
+  td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #1a2535; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #263248; }
+  .td-pos { color: #34d399; font-weight: 600; }
+  .td-neg { color: #f87171; font-weight: 600; }
+  .td-zero { color: #475569; }
+  .td-today { background: #1a2540 !important; }
+
+  .alert-banner { background: #451a03; border: 1px solid #92400e; border-radius: 12px; padding: 14px 20px; margin-bottom: 28px; display: flex; align-items: center; gap: 12px; }
+  .alert-icon { font-size: 20px; }
+  .alert-text { font-size: 13px; color: #fcd34d; }
+  .alert-text strong { font-size: 15px; color: #fbbf24; display: block; margin-bottom: 2px; }
+
+  .footer { font-size: 11px; color: #334155; text-align: center; padding-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>NeoStrike <span class="badge live">● LIVE</span></h1>
+<div class="subtitle">7-Day Metrics Dashboard &nbsp;·&nbsp; 25 Mar – 31 Mar 2026 &nbsp;·&nbsp; Fetched 2026-03-31T08:26:08Z &nbsp;·&nbsp; Agent: claude-cowork2</div>
+
+<div class="alert-banner">
+  <div class="alert-icon">⚠️</div>
+  <div class="alert-text">
+    <strong>Compliance Alerts up 159% vs prior period</strong>
+    57 alerts this week vs 22 last period — significant increase requiring review. GGR has also turned negative at −£227.20 driven by a large loss day on 28 Mar (−£339.50).
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi">
+    <div class="kpi-label">GGR (7d)</div>
+    <div class="kpi-value neg">−£227.20</div>
+    <div class="kpi-sub">Gross Gaming Revenue</div>
+    <div class="kpi-delta down">▼ was +£76.30 last period</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">NGR (7d)</div>
+    <div class="kpi-value neg">−£427.20</div>
+    <div class="kpi-sub">Net Gaming Revenue</div>
+    <div class="kpi-delta up">▲ improved from −£1,323.70</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Bonus Exposure</div>
+    <div class="kpi-value pos">£200</div>
+    <div class="kpi-sub">Active bonus liability</div>
+    <div class="kpi-delta up">▼ reduced from £2,210</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Active Players</div>
+    <div class="kpi-value">4</div>
+    <div class="kpi-sub">of 19 total registered</div>
+    <div class="kpi-delta">→ unchanged</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Transactions</div>
+    <div class="kpi-value">148</div>
+    <div class="kpi-sub">Total this period</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Events Sent</div>
+    <div class="kpi-value">561</div>
+    <div class="kpi-sub">Platform events emitted</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Approval Rate</div>
+    <div class="kpi-value pos">100%</div>
+    <div class="kpi-sub">Agent action approvals</div>
+    <div class="kpi-delta up">→ unchanged</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Compliance Alerts</div>
+    <div class="kpi-value warn">57</div>
+    <div class="kpi-sub">RG / Duty of Care flags</div>
+    <div class="kpi-delta down">▲ up from 22 last period</div>
+  </div>
+</div>
+
+<div class="comparison">
+  <div>
+    <div class="comp-label">GGR</div>
+    <div class="comp-row"><span class="comp-prev">+£76.30</span><span class="comp-arrow">→</span><span class="comp-curr worse">−£227.20</span></div>
+  </div>
+  <div>
+    <div class="comp-label">NGR</div>
+    <div class="comp-row"><span class="comp-prev">−£1,323.70</span><span class="comp-arrow">→</span><span class="comp-curr better">−£427.20</span></div>
+  </div>
+  <div>
+    <div class="comp-label">Bonus Exposure</div>
+    <div class="comp-row"><span class="comp-prev">£2,210</span><span class="comp-arrow">→</span><span class="comp-curr better">£200</span></div>
+  </div>
+  <div>
+    <div class="comp-label">Compliance Alerts</div>
+    <div class="comp-row"><span class="comp-prev">22</span><span class="comp-arrow">→</span><span class="comp-curr worse">57</span></div>
+  </div>
+  <div>
+    <div class="comp-label">Active Players</div>
+    <div class="comp-row"><span class="comp-prev">4</span><span class="comp-arrow">→</span><span class="comp-curr neutral">4</span></div>
+  </div>
+  <div>
+    <div class="comp-label">Approval Rate</div>
+    <div class="comp-row"><span class="comp-prev">100%</span><span class="comp-arrow">→</span><span class="comp-curr neutral">100%</span></div>
+  </div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card">
+    <div class="chart-title">Daily GGR vs NGR vs Bonus Cost (£)</div>
+    <canvas id="ggrChart" height="220"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">Bonus Status Breakdown</div>
+    <canvas id="bonusChart" height="220"></canvas>
+  </div>
+</div>
+
+<div class="bonus-grid">
+  <div class="bonus-card"><div class="bonus-num" style="color:#60a5fa">23</div><div class="bonus-lbl">Active Bonuses</div></div>
+  <div class="bonus-card"><div class="bonus-num" style="color:#34d399">3</div><div class="bonus-lbl">Completed</div></div>
+  <div class="bonus-card"><div class="bonus-num" style="color:#f87171">2</div><div class="bonus-lbl">Forfeited</div></div>
+  <div class="bonus-card"><div class="bonus-num" style="color:#94a3b8">0</div><div class="bonus-lbl">Expired</div></div>
+  <div class="bonus-card"><div class="bonus-num" style="color:#fbbf24">£2,210</div><div class="bonus-lbl">Total Credited</div></div>
+  <div class="bonus-card"><div class="bonus-num" style="color:#a78bfa">14.7%</div><div class="bonus-lbl">Avg Wagering</div></div>
+</div>
+
+<div class="table-card">
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>GGR (£)</th>
+        <th>NGR (£)</th>
+        <th>Bonus Cost (£)</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>25 Mar</td><td class="td-pos">+73.80</td><td class="td-neg">−26.20</td><td>100.00</td><td style="color:#64748b;font-size:12px">Bonus issued</td></tr>
+      <tr><td>26 Mar</td><td class="td-zero">0.00</td><td class="td-zero">0.00</td><td class="td-zero">0.00</td><td style="color:#475569;font-size:12px">No activity</td></tr>
+      <tr><td>27 Mar</td><td class="td-pos">+2.50</td><td class="td-pos">+2.50</td><td>0.00</td><td style="color:#64748b;font-size:12px">Small win</td></tr>
+      <tr><td>28 Mar</td><td class="td-neg">−339.50</td><td class="td-neg">−339.50</td><td>0.00</td><td style="color:#f87171;font-size:12px">⚠ Large loss day</td></tr>
+      <tr><td>29 Mar</td><td class="td-pos">+40.50</td><td class="td-neg">−59.50</td><td>100.00</td><td style="color:#64748b;font-size:12px">Bonus issued</td></tr>
+      <tr><td>30 Mar</td><td class="td-neg">−4.50</td><td class="td-neg">−4.50</td><td>0.00</td><td style="color:#64748b;font-size:12px">Minor loss</td></tr>
+      <tr class="td-today"><td>31 Mar <span style="font-size:10px;color:#60a5fa">(today)</span></td><td class="td-zero">0.00</td><td class="td-zero">0.00</td><td class="td-zero">0.00</td><td style="color:#475569;font-size:12px">Day in progress</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">NeoStrike AFA · Agent claude-cowork2 · T3 Trust Tier · Data as of 2026-03-31T08:26:08Z</div>
+
+<script>
+const labels = ['25 Mar','26 Mar','27 Mar','28 Mar','29 Mar','30 Mar','31 Mar'];
+const ggrData = [73.8, 0, 2.5, -339.5, 40.5, -4.5, 0];
+const ngrData = [-26.2, 0, 2.5, -339.5, -59.5, -4.5, 0];
+const bonusData = [100, 0, 0, 0, 100, 0, 0];
+
+new Chart(document.getElementById('ggrChart'), {
+  data: {
+    labels,
+    datasets: [
+      {
+        type: 'bar',
+        label: 'GGR',
+        data: ggrData,
+        backgroundColor: ggrData.map(v => v >= 0 ? 'rgba(52,211,153,0.55)' : 'rgba(248,113,113,0.55)'),
+        borderColor: ggrData.map(v => v >= 0 ? '#34d399' : '#f87171'),
+        borderWidth: 1,
+        borderRadius: 4,
+        yAxisID: 'y'
+      },
+      {
+        type: 'line',
+        label: 'NGR',
+        data: ngrData,
+        borderColor: '#818cf8',
+        backgroundColor: 'rgba(129,140,248,0.08)',
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: '#818cf8',
+        fill: false,
+        yAxisID: 'y'
+      },
+      {
+        type: 'bar',
+        label: 'Bonus Cost',
+        data: bonusData,
+        backgroundColor: 'rgba(251,191,36,0.35)',
+        borderColor: '#fbbf24',
+        borderWidth: 1,
+        borderRadius: 4,
+        yAxisID: 'y'
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+      tooltip: { mode: 'index', intersect: false }
+    },
+    scales: {
+      x: { ticks: { color: '#64748b', font: { size: 11 } }, grid: { color: '#1e293b' } },
+      y: { ticks: { color: '#64748b', font: { size: 11 }, callback: v => '£' + v }, grid: { color: '#263248' } }
+    }
+  }
+});
+
+new Chart(document.getElementById('bonusChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Active', 'Completed', 'Forfeited'],
+    datasets: [{
+      data: [23, 3, 2],
+      backgroundColor: ['#3b82f6','#34d399','#f87171'],
+      borderColor: '#1e293b',
+      borderWidth: 3,
+      hoverOffset: 8
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '65%',
+    plugins: {
+      legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 }, padding: 14 } }
+    }
+  }
+});
+</script>
+</body>
+</html>

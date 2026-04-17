@@ -131,6 +131,33 @@ class BonusManagementService {
         return { success: true };
     }
 
+    static async bulkForfeitByTemplate(brandId, templateId) {
+        // Fetch all ongoing/created/active bonus instances for this template
+        const { data: instances, error: fetchError } = await supabaseService.client
+            .from('bonus_instances')
+            .select('*')
+            .eq('brand_id', brandId)
+            .eq('bonus_template_id', templateId)
+            .in('state', ['CREATED', 'ONGOING']);
+
+        if (fetchError) throw fetchError;
+        if (!instances || instances.length === 0) return { success: true, count: 0 };
+
+        // Process each instance via the standard forfeiture logic
+        let processedCount = 0;
+        for (const instance of instances) {
+            try {
+                // This handles state update, event logging, and player balance deduction
+                await this.forfeitBonus(instance.id);
+                processedCount++;
+            } catch (err) {
+                logger.error('[Bonus Ops] Bulk forfeit failed for instance', { instanceId: instance.id, error: err.message });
+            }
+        }
+
+        return { success: true, count: processedCount };
+    }
+
     static async extendExpiry(instanceId, days) {
         const { data: instance, error: fetchError } = await supabaseService.client
             .from('bonus_instances')

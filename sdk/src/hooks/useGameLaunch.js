@@ -9,7 +9,16 @@ export const useGameLaunch = (gameId, options = {}) => {
     const cache = useRef({});
 
     useEffect(() => {
-        if (!gameId) return;
+        if (!gameId) {
+            setLaunchUrl(null);
+            setIsLoading(false);
+            setError(null);
+            return;
+        }
+
+        // Reset state for new gameId to avoid stale URLs
+        setLaunchUrl(null);
+        setError(null);
 
         // neostrike-demo: resolve immediately without backend call
         if (gameId === 'neostrike-demo') {

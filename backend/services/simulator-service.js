@@ -3,10 +3,37 @@ const ftService = require('./ft-integration');
 const supabaseService = require('./supabase');
 const { client: supabase } = supabaseService;
 const { generateCorrelationId, logger, auditLog } = require('./logger');
+const afaEvents = require('./afa-events');
+const crypto = require('crypto');
 
 // In-memory store for sandbox activity (Velocity Spike tracking)
 const sandboxLogs = [];
 const sandboxBalances = new Map(); // Store balances keyed by user_id
+
+/**
+ * Emit an event directly to the AFA broadcast channel (sandbox bypass).
+ * In production, events flow FT -> webhook -> AFA. In sandbox, FT never calls back,
+ * so we short-circuit directly into the AFA event bus here.
+ */
+function emitAfaEvent(eventType, payload, brandId = 1) {
+    try {
+        const broadcastKey = `sse:agent:broadcast:${brandId}`;
+        const envelope = {
+            event_id: crypto.randomUUID(),
+            event_type: eventType,
+            occurred_at: new Date().toISOString(),
+            brand_id: brandId,
+            data: payload,
+        };
+        const listenerCount = afaEvents.listenerCount(broadcastKey);
+        if (listenerCount > 0) {
+            afaEvents.emit(broadcastKey, envelope);
+            logger.info(`[Simulator] AFA broadcast: ${eventType} -> ${broadcastKey} (${listenerCount} listeners)`, { eventType });
+        }
+    } catch (err) {
+        logger.warn('[Simulator] Failed to emit AFA event', { error: err.message });
+    }
+}
 
 /**
  * SimulatorService
@@ -399,6 +426,21 @@ class SimulatorService {
                 }).eq('id', bal.dbId);
             }
 
+            // [AFA] Emit directly to AFA broadcast (sandbox bypass — FT never calls back in dev)
+            emitAfaEvent('casino', {
+                type: 'Bet',
+                player_id: uid,
+                amount: amount,
+                game_id: req.body.game_id || 'neostrike-demo',
+                balance_before: realBefore,
+                balance_after: bal.amount,
+                bonus_before: bonusBefore,
+                bonus_after: bal.bonus,
+                currency: 'EUR',
+                transaction_id: req.body.transaction_id,
+                message: `Bet: ${amount} EUR on ${req.body.game_id || 'neostrike-demo'}`,
+            }, brandId);
+
             res.json({
                 transaction_id: `sandbox-tx-${Date.now()}`,
                 balance: bal.amount,
@@ -480,6 +522,17 @@ class SimulatorService {
                 }).eq('id', bal.dbId);
             }
 
+            // [AFA] Emit bonus event directly to AFA broadcast
+            emitAfaEvent('bonus', {
+                type: 'WelcomeBonus',
+                player_id: uid,
+                amount: bonusAmount,
+                bonus_code: bcode,
+                bonus_balance_after: bal.bonus,
+                currency: 'EUR',
+                message: `Bonus Credited: ${bonusAmount} EUR (${bcode})`,
+            }, brandId);
+
             res.json({
                 success: true,
                 bonus_balance: bal.bonus,
@@ -557,6 +610,19 @@ class SimulatorService {
                 }).eq('id', bal.dbId);
             }
 
+            // [AFA] Emit casino win directly to AFA broadcast
+            emitAfaEvent('casino', {
+                type: 'Win',
+                player_id: uid,
+                amount: amount,
+                game_id: req.body.game_id || 'neostrike-demo',
+                balance_before: balanceBefore,
+                balance_after: bal.amount,
+                currency: 'EUR',
+                transaction_id: req.body.transaction_id,
+                message: `Win: ${amount} EUR on ${req.body.game_id || 'neostrike-demo'}`,
+            }, brandId);
+
             res.json({
                 transaction_id: `sandbox-win-${Date.now()}`,
                 balance: bal.amount,
@@ -631,6 +697,18 @@ class SimulatorService {
                     bonus_balance: bal.bonus 
                 }).eq('id', bal.dbId);
             }
+
+            // [AFA] Emit deposit event directly to AFA broadcast
+            emitAfaEvent('deposit', {
+                type: 'Deposit',
+                player_id: uid,
+                amount: depositAmount,
+                balance_before: balanceBefore,
+                balance_after: bal.amount,
+                currency: 'EUR',
+                status: 'Approved',
+                message: `Deposit: ${depositAmount} EUR`,
+            }, brandId);
 
             res.json({
                 success: true,

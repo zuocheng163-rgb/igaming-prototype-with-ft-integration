@@ -1,0 +1,573 @@
+NEOSTRIKE
+Product Expansion Roadmap
+Consolidated PRD — Phases 1 to 4
+Admin UX Parity  ·  Commercial Modules  ·  Sportsbook Alpha  ·  Fraud & Trust Surfacing
+April 2026  ·  Confidential — Internal Product Use
+Executive Summary
+This PRD consolidates the four delivery phases that close the operator-UX and commercial-product gap between NeoStrike (AI-native iGaming integration platform) and competitors offering full turnkey casino + sportsbook stacks. The scope is derived from the NeoStrike vs. BetNexus feature comparison and is explicitly shaped around keeping NeoStrike's differentiators intact — the Seamless Wallet SPI (F9), the Agent-Friendly API (F13 / AFA), the F11 Duty-of-Care engine, the RabbitMQ event bus and the 7-year immutable audit trail.
+The work is organised into four phases. Each phase is independently shippable and its own OKR target. All four phases additively extend the existing Reference Frontend (F12), SDK and Operator Portal. No backend re-platforming is required.
+Scope Boundary
+This PRD covers frontend (SDK + Scaffold), operator portal (React admin) and the backend surface needed to support them. It explicitly does not replace or modify:
+	•	F9 Seamless Wallet SPI (debit / credit / rollback / deposit)
+	•	F11 Duty-of-Care scoring engine (composite risk score, SSE event stream)
+	•	F13 AFA trust model (three-tier scopes, agent tokens, analysis API)
+	•	Fast Track Rewards integration path (the CRM and gamification surface remains Fast Track's domain)
+	•	RabbitMQ event bus topology and 7-year audit trail storage
+Phase Overview
+Phase
+Theme
+Duration
+Primary goal
+Phase 1
+Admin UX Parity
+2–3 sprints
+Give operators first-class control of their own tenant via the portal — roles, KYC, player notes, exports, country rules.
+Phase 2
+Commercial Modules
+3–4 sprints
+Unlock revenue surfaces that are table stakes for modern operators — affiliate, CMS, theming, i18n.
+Phase 3
+Sportsbook Alpha
+4–6 sprints
+Ship an end-to-end sportsbook SDK + Scaffold surface backed by one provider adapter, reusing the F9 wallet.
+Phase 4
+Fraud & Trust Surfacing
+Ongoing
+Turn existing F11 / AFA signals into operator-facing dashboards and an explainable trust UX.
+Component Index
+Components follow the existing F12 naming convention (F14-XX through F17-XX, reserving F12 / F13 for frontend and AFA respectively).
+Phase
+ID
+Component
+Type
+1
+F14-01
+Roles & Permissions Editor
+Portal module
+1
+F14-02
+KYC Upload & Review Workflow
+SDK hook + Portal module
+1
+F14-03
+Player Internal Notes
+Portal component
+1
+F14-04
+Reports & Exports (CSV/PDF, scheduled)
+Portal module + Backend job
+1
+F14-05
+Country Rules Panel
+Portal module + Backend model
+2
+F15-01
+Affiliate & Referral Module
+Portal + Backend + Public portal
+2
+F15-02
+CMS Content Management
+Portal module + Scaffold route
+2
+F15-03
+Theme Picker with Preview
+Portal + Scaffold
+2
+F15-04
+Internationalisation Baseline
+SDK hook + Scaffold
+3
+F16-01
+Sportsbook Catalogue & Event API
+Backend
+3
+F16-02
+Sportsbook SDK Hooks
+SDK
+3
+F16-03
+Scaffold Sportsbook Pages
+Scaffold
+3
+F16-04
+Bet Slip + Cash-Out Experience
+SDK component + Scaffold
+3
+F16-05
+Sportsbook Provider Adapter (reference)
+Backend
+4
+F17-01
+Fraud Signals Feed
+Backend + Portal
+4
+F17-02
+Collusion Graph Explorer
+Portal module
+4
+F17-03
+ATO Alerts Dashboard
+Portal module
+4
+F17-04
+Bonus Abuse & Burn-Rate Dashboard
+Portal module
+4
+F17-05
+Trust Score Timeline on Player Profile
+Portal component
+Phase 1 · Admin UX Parity
+Phase 1 closes the gap that stops operators running day-to-day operations through the NeoStrike Portal without dropping into the database or AFA scripts. It is intentionally unglamorous and intentionally high-leverage: once it ships, operators can self-serve 80% of the queries that currently escalate to support.
+Component F14-01 · Roles & Permissions Editor
+Overview
+Extends the existing AgentPolicyPanel pattern (which grants scopes to AI agents) to grant scopes to human operators. Introduces five seed roles — Super Admin, Brand Admin, Finance Manager, CRM Manager, Customer Support — and exposes a per-module, per-action permission matrix.
+User Stories
+	•	As a Super Admin, I can create a new role, pick the modules it can read / write, and assign it to an operator account.
+	•	As a Brand Admin, I cannot see data from brands I am not assigned to, even though my operator account exists on the shared tenant.
+	•	As Finance, I can export transaction logs but cannot edit a player's bonus balance.
+Functional Requirements
+	•	New backend entities: roles, role_scopes, operator_role_assignments. Scopes are the same string-keyed scopes used today by AFA (metrics:read, player:restrict, bonus:issue, etc.) extended with UI-bound scopes (ui:reports:export, ui:player:view_pii).
+	•	New portal route /settings/roles with: role list, role editor drawer, permission matrix (rows = modules, columns = actions: read / write / approve / export), and an ‘Applied to’ counter showing how many operator accounts reference the role.
+	•	Every privileged action in the portal reads a required scope from a new components/authz/RequireScope wrapper. Unauthorised users see a disabled control with a tooltip, not a hidden element.
+	•	Audit trail integration: every role change is logged to afa-audit-service.js with actor, before/after scope list and timestamp.
+Acceptance Criteria
+	•	A role created in the editor becomes assignable to an operator account within the same session, with no backend restart.
+	•	Permission changes take effect on the operator's next API call (token re-issued or scope re-fetched from /api/operator/me).
+	•	Brand Admin cannot query aggregate platform data — a 403 with code scope_required is returned and rendered as a contextual toast.
+	•	All five seed roles exist on first boot (migrations/roles_seed.sql). Removing the seed roles is blocked (409 role_is_seed).
+	•	RolesPanel renders within 300ms on a tenant with 200 roles and 5,000 operator accounts.
+Component F14-02 · KYC Upload & Review Workflow
+Overview
+Today NeoStrike exposes useKycStatus() and a backend kyc service, but there is no upload path in the Scaffold and no review queue in the Portal. This component closes both ends.
+SDK Additions
+const { uploadDocument, documents, isSubmitting, error } = useKycUpload({ maxSizeMB: 10 })
+	•	Supported documents: passport, national_id, drivers_licence, proof_of_address, selfie.
+	•	Upload returns a document_id; the hook polls GET /api/user/kyc/documents/{id} for status (pending | ocr_complete | approved | rejected | manual_review).
+Scaffold Additions
+	•	New modal KycUploadModal wired to the existing AccountDashboard via a ‘Verify identity’ CTA when getKycStatus() returns anything other than approved.
+	•	Drag-and-drop upload area with client-side validation (file type, max size, max page count for PDF), live preview, and a progress bar.
+	•	Responsive: bottom-sheet on <768px, modal on desktop. Matches the WalletDrawer aesthetic.
+Portal Additions
+	•	New portal route /compliance/kyc with columns: player, document type, uploaded at, OCR confidence, current status. Filters: status, country, risk score bucket.
+	•	Review drawer with zoomable / rotatable document preview, OCR field overlay, approve / reject / request re-upload buttons, and a free-text reviewer note (stored and shown to future reviewers, not to the player).
+	•	Auto-approval rules editor: conditions (OCR confidence threshold, country allow-list, document type), action = auto-approve. All auto-approvals write an audit entry with reason="rule:<rule_id>".
+Non-Functional Requirements
+	•	PII at rest encrypted with operator-managed KMS key (envelope encryption, not plaintext in Postgres).
+	•	Documents served through signed URLs with 5-minute TTL. Direct object-store URLs are never exposed to the client.
+	•	Full flow instrumented with F10 metrics: kyc_upload_count, kyc_auto_approval_rate, kyc_time_to_decision_p50.
+Acceptance Criteria
+	•	Upload of a 5MB JPEG completes in <4 seconds on a 10Mbps connection.
+	•	Auto-approval rule with OCR confidence ≥ 0.9 and country ∈ allow-list approves a compliant passport within 10 seconds of upload.
+	•	Manual reviewer drawer loads the document preview within 800ms.
+	•	All reviewer actions are attributable — rejecting the audit trail shows actor, document ID, reason enum and free-text note.
+	•	Deleting a rejected document triggers a GDPR-compliant purge within 24 hours (async job, auditable).
+Component F14-03 · Player Internal Notes
+Overview
+Adds a notes tab to the existing PlayerDetailsModal so support, fraud and VIP teams can share context on a player without exporting the profile to external tools.
+Functional Requirements
+	•	New entity player_notes with fields: id, player_id, author_operator_id, body (markdown, capped at 4,000 chars), visibility (internal_all | internal_role_<role_id>), pinned (boolean), created_at, edited_at.
+	•	Tab added inside PlayerDetailsModal after Transactions, before Audit. List sorted by pinned then created_at desc.
+	•	Author edit window: 15 minutes. After that notes are append-only and edits create a new note with reference_to field.
+	•	Notes are PII-classified and are included in the GDPR export / delete pipeline.
+Acceptance Criteria
+	•	A Support agent creating a note sees it within 200ms of save.
+	•	A CRM Manager role without the scope notes:read:internal_all cannot see notes authored by the Fraud team.
+	•	Deleting a player triggers removal of all attached notes within the same transaction as the player soft-delete.
+	•	Notes tab supports keyboard shortcut Cmd+Enter to save.
+Component F14-04 · Reports & Exports
+Overview
+Every table in the existing DataTable component gains an Export menu. In addition, operators can schedule recurring CSV / PDF reports delivered to a Slack channel or email. This sits on top of F10, not next to it.
+Functional Requirements
+	•	DataTable gains a headless exportConfig prop: { formats: ['csv', 'pdf'], filenameTemplate, columns }. Rendering is opt-in per instance so that non-exportable tables (e.g. audit log) can disable the feature.
+	•	Server-side export: /api/operator/exports (POST) accepts a report_type, filters and format. Response includes a job_id. Client polls /api/operator/exports/{job_id} until status=completed and then receives a signed URL.
+	•	Scheduled reports: /api/operator/exports/schedules with cron expression, destination (slack:#channel | email:<address>) and report definition. Managed by the existing jobs folder.
+	•	PDF rendering uses server-side Puppeteer templates located in backend/services/report-templates/. Default templates: GGR by day, Top 20 players by deposits, Bonus exposure, KYC queue summary.
+Acceptance Criteria
+	•	CSV export of a 100,000-row transactions table completes within 30 seconds and is delivered as a single file under 20MB (gzip on the wire).
+	•	PDF export renders consistently across WebKit and Chromium and matches a snapshot test checked into backend/tests/report-snapshots.
+	•	A scheduled daily report fires within 2 minutes of its cron expression under normal queue load.
+	•	Failed export jobs are retried exactly 3 times with exponential backoff, then written to an operator inbox alert.
+Component F14-05 · Country Rules Panel
+Overview
+Introduces a per-country configuration layer inside the Tenant Portal so operators can express currency, locale, odds format, max stake, bonus eligibility and restricted games without writing code. Backend already keys most configuration by brandId; this component adds a country sub-key.
+Functional Requirements
+	•	Backend: tenant_configs extended with a countries JSONB column: { "DE": { currency: "EUR", locale: "de-DE", odds_format: "decimal", max_stake: 1000, allowed_game_ids: null, blocked_game_ids: [...], rg_overrides: {...} } }.
+	•	Portal: /settings/countries page with a searchable country list, inline edit for simple fields, and a drawer for complex fields (game restrictions, RG overrides).
+	•	Inheritance: empty fields fall back to the tenant-wide default. Effective value is shown with a subtle ‘inherited’ badge.
+	•	SDK: a new /api/v1/geo endpoint returns the resolved country for the current request (IP-based, override via header x-country-override for sandbox). useCountry() hook exposes country + effective config to Scaffold components.
+Acceptance Criteria
+	•	Editing max_stake for DE is reflected in SDK-level validation within 60 seconds (cache TTL).
+	•	A user in a blocked country receives a ‘service not available’ page at Scaffold load, not after login.
+	•	Country rules changes are logged with before/after diffs in the audit trail.
+	•	Importing country rules via CSV (for operators migrating from a competitor) is supported and validated against a JSON schema.
+Phase 2 · Commercial Modules
+Phase 2 adds the revenue surfaces that operators expect from a ‘complete’ iGaming platform but are not present anywhere in the current NeoStrike stack. Each component is commercially meaningful in isolation; together they materially change NeoStrike's positioning from ‘integration layer’ to ‘complete product’.
+Component F15-01 · Affiliate & Referral Module
+Overview
+End-to-end affiliate system. Introduces affiliate tiers, tracking links, attribution of FTD / turnover / commission, an operator console and a self-service affiliate portal on a separate subdomain.
+Data Model
+Entity
+Key fields
+affiliate
+id, brand_id, name, contact_email, tier_id, status, revshare_pct (override), cpa_amount (override), created_at
+affiliate_tier
+id, brand_id, name, model (REVSHARE | CPA | CPL | HYBRID), default_revshare_pct, default_cpa_amount, min_ftds_per_month
+affiliate_link
+id, affiliate_id, label, utm_source/campaign/medium, country_whitelist, landing_path, created_at
+affiliate_click
+id, link_id, ip, user_agent, country_geo, referrer, ts
+affiliate_conversion
+id, click_id, player_id, conversion_type (SIGNUP | FTD), amount, ts, commission_amount, commission_status (accruing | payable | paid | reversed)
+affiliate_payout_batch
+id, affiliate_id, period_start, period_end, total_amount, status, approver_operator_id, paid_at
+Functional Requirements
+	•	Tracking link hitting /r/{link_id} redirects to landing_path, writes an affiliate_click row, drops a signed first-party cookie with 30-day TTL and records a fingerprint for fallback attribution.
+	•	On registration, if a cookie or a ?ref= query param is present, the player is tagged with a last-non-empty-referrer attribution model. Attribution is immutable after first FTD.
+	•	Commission accrual runs as a nightly job reading FTD / wager / win events from RabbitMQ and writing affiliate_conversion rows.
+	•	Operator portal: /marketing/affiliates with list view, affiliate drawer (tier, links, conversion stats, open balance), and a Payouts tab with approve / reject / mark-as-paid.
+	•	Public affiliate portal at affiliates.<tenant>.neostrike.io with magic-link auth, performance dashboard (clicks, signups, FTDs, revenue, commission), downloadable reports, and tracking link generator.
+Acceptance Criteria
+	•	A click on a tracking link redirects in <200ms on a 50ms-RTT connection.
+	•	A player who signs up through link A and converts FTD within 30 days is attributed to A; after 30 days they are attributed to the current link or none.
+	•	Commission for a 50/50 revshare tier matches manually computed NGR minus bonus cost minus tax for any given calendar month to within €1 rounding.
+	•	The affiliate portal enforces brand isolation — an affiliate of Brand A cannot see Brand B data even if the same email is registered on both.
+	•	Payout batch approval requires the scope marketing:payouts:approve; Finance can generate but not approve, CRM can do neither.
+Component F15-02 · CMS Content Management
+Overview
+Promotes the existing Pages.jsx placeholder into a real CMS. Operators can manage T&Cs, Privacy, Responsible Gaming, Bonus Terms and arbitrary marketing landing pages with locale, country and segment visibility. The Scaffold renders any CMS page under /content/{slug}.
+Data Model
+	•	content_page: id, brand_id, slug, default_locale, status (draft | published | archived), seo_title, seo_description, og_image, schema_json, created_at, updated_at
+	•	content_page_translation: page_id, locale, title, body_mdx, author_operator_id, updated_at
+	•	content_visibility: page_id, country_allow_list, country_block_list, segment_allow_list, segment_block_list, starts_at, ends_at
+Authoring
+	•	Portal editor: TipTap-based rich text with a small set of iGaming-specific blocks — bonus terms, responsible-gaming callout, T&Cs version stamp.
+	•	MDX component whitelist: only safe components are importable (no script, no arbitrary HTML). Server-side rendering via a sandboxed MDX compiler.
+	•	Preview mode: operators can preview any country + locale + segment combination inside a device-frame iframe of the Scaffold before publishing.
+Scaffold Integration
+	•	New route /content/{slug} that server-side-renders the MDX with locale resolved from useCountry() and useLocale().
+	•	Footer component that pulls visible slugs from GET /api/v1/content/footer_pages for the current country and locale, no hard-coding.
+Acceptance Criteria
+	•	Publishing a page makes it available to the Scaffold within 30 seconds (CDN invalidation).
+	•	Country-blocked pages return 404 for users in those countries, not a redirect — 404 is required for SEO hygiene.
+	•	SEO fields are correctly emitted as meta tags and JSON-LD when the Scaffold server-renders.
+	•	Reverting to a previous version is one click; all versions are retained for the retention period of the audit trail.
+Component F15-03 · Theme Picker with Preview
+Overview
+Extends theme.config.js into a directory of presets and adds a portal UX to pick / customise / preview a theme across mobile, tablet and desktop.
+Functional Requirements
+	•	scaffold/src/themes/ — one file per preset exporting CSS custom properties (color-base, color-accent, color-primary, font-family, radius-base, etc.). Ship 8 seed presets.
+	•	Portal: /settings/theme page with preset grid, inline colour picker for overrides, upload fields for logo and background image, and a device-frame iframe preview that loads the Scaffold with a theme-preview token.
+	•	Theme tokens are resolved at build time for self-hosted operators, or at request time for managed operators. The SDK receives the theme through a <style> tag injected by the Scaffold shell.
+Acceptance Criteria
+	•	Switching theme in the preview updates all three device frames within 500ms without a full reload.
+	•	A saved theme is live on the public domain within 90 seconds of save (CDN warm cache).
+	•	All eight presets pass WCAG 2.1 AA contrast on the default game grid and wallet modal.
+	•	Broken theme uploads (missing required tokens) are rejected with a clear error, never partially applied.
+Component F15-04 · Internationalisation Baseline
+Overview
+Adds a first-class i18n layer to the SDK and Scaffold. The goal is not to localise every string on day one but to make localisation possible without a Scaffold fork.
+Functional Requirements
+	•	Adopt react-intl (ICU message format). Extract every user-facing string from scaffold/src/**/*.jsx into messages/en.json.
+	•	Ship messages/ for en, es, pt, de, fr, it as the baseline bundle. Remaining locales loadable on demand.
+	•	useLocale() SDK hook returns the resolved locale (priority: URL param > user profile > geo default > brand default > en).
+	•	Currency and number formatting flow through the same hook so that EUR 1,234.56 and € 1.234,56 are both correct.
+	•	Right-to-left (ar, he) is supported at the CSS-logical-properties level. All new CSS uses inline-start / inline-end, not left / right.
+Acceptance Criteria
+	•	Switching locale in the account dashboard updates all visible strings within one render, no full reload.
+	•	Missing translations fall back to en and are reported to /api/v1/telemetry/missing-translation once per session per key.
+	•	Pluralisation works correctly for English (‘you have 1 free bet’ / ‘you have 3 free bets’) and for Russian (three plural forms).
+	•	Scaffold bundle size increase is ≤15KB gzipped per locale (lazy-loaded).
+Phase 3 · Sportsbook Alpha
+Phase 3 delivers the biggest single feature gap against turnkey competitors: a real sportsbook. The goal of the alpha is not feature parity with tier-1 sportsbook providers but a credible minimum surface that a prospect can demo end-to-end — browse events, place bets, see them settle, and cash out — all backed by NeoStrike's existing Seamless Wallet SPI.
+Architectural choice: the sportsbook adapter model mirrors the existing game provider adapter pattern. One reference adapter is implemented against a public odds provider (e.g. BetRadar or an open odds feed in sandbox); additional providers are operator-implemented. NeoStrike does not run a trading desk and is not a risk-taking entity.
+Component F16-01 · Sportsbook Catalogue & Event API
+Data Model
+Entity
+Key fields
+sport
+id, name, slug, icon_url, display_order
+league
+id, sport_id, country_code, name, slug, season, display_order
+event
+id, league_id, home_team, away_team, start_ts, status (upcoming | live | finished | cancelled), provider_event_id, stream_url
+market
+id, event_id, type (ML | SPREAD | TOTAL | BTTS | ...), status (open | suspended | settled), min_stake, max_stake
+selection
+id, market_id, name, line (optional), current_odds, previous_odds, status (open | suspended | won | lost | void)
+bet
+id, player_id, bet_type (SINGLE | ACCUMULATOR | SYSTEM), stake, currency, potential_payout, status, cash_out_value (nullable), placed_ts, settled_ts
+bet_leg
+id, bet_id, selection_id, odds_at_placement, status
+Backend API Surface
+	•	GET /api/v1/sports — list of sports with counts of live / upcoming events.
+	•	GET /api/v1/sports/{slug}/leagues — leagues in a sport, paginated, supports ?country= filter.
+	•	GET /api/v1/events?league=&status=&from=&to= — event list with embedded top markets.
+	•	GET /api/v1/events/{id} — single event with full markets / selections.
+	•	POST /api/v1/bets — place bet. Debits wallet atomically via F9. Returns bet id and status.
+	•	POST /api/v1/bets/{id}/cash-out — request cash-out. Returns accepted amount or rejection reason.
+	•	GET /api/v1/bets/me — player's bets with status filter.
+	•	SSE /api/v1/events/{id}/stream — live odds stream for an event.
+Acceptance Criteria
+	•	Event list for a popular league (e.g. EPL) returns within 300ms p95 and 600ms p99 under sandbox load of 50 rps.
+	•	Place bet roundtrip (including F9 debit) completes within 600ms p95.
+	•	Odds feed SSE delivers a change event within 200ms of adapter ingest.
+	•	All bets are replayable from the event bus — a bet can be reconstructed from the sequence of BET_PLACED / BET_SETTLED / CASH_OUT events.
+Component F16-02 · Sportsbook SDK Hooks
+Hook Inventory
+Hook
+Returns
+Purpose
+useSportsCatalogue()
+{ sports, isLoading }
+Top-level sports list for the sidebar.
+useLeagues(sportSlug)
+{ leagues, isLoading }
+Leagues for a sport.
+useEvents({ league, status })
+{ events, isLoading, nextCursor }
+Paginated events for a league / status.
+useEvent(eventId)
+{ event, odds, subscribe, unsubscribe }
+Subscribe to live odds via SSE.
+useBetSlip()
+{ legs, add, remove, clear, place, isValid, validationErrors }
+Client-side bet slip state machine.
+useCashOut(betId)
+{ cashOutValue, canCashOut, request, isRequesting }
+Poll cash-out availability; trigger cash-out.
+useBetHistory({ status })
+{ bets, isLoading, nextCursor }
+Player bet list.
+Bet Slip State Machine
+The bet slip is a state machine with these states: EMPTY, EDITING, VALIDATING, PLACING, PLACED, FAILED. Transitions are triggered by hook actions (add, place, clear) and by provider responses (odds_changed requires EDITING re-validation). The state machine is exported so Scaffold can hook its UI onto state transitions rather than polling.
+Acceptance Criteria
+	•	useEvent odds updates propagate to all subscribed components within one render.
+	•	Bet slip odds-change detection surfaces a user prompt (‘odds changed, confirm?’) within 200ms of the change event.
+	•	useBetSlip persists across navigation within the Scaffold via sessionStorage, but clears on logout.
+	•	Adding a selection from a suspended market rejects locally with a clear error, without a network call.
+Component F16-03 · Scaffold Sportsbook Pages
+Page Inventory
+Route
+Component
+Purpose
+/sport
+SportsLobby
+Grid of sports with featured events.
+/sport/{sport}
+LeagueBrowser
+Leagues list and today / live / upcoming tabs.
+/sport/{sport}/{league}
+EventList
+Events in a league, top markets embedded.
+/sport/event/{id}
+EventPage
+Full markets, live score (if streamed), related events.
+/sport/my-bets
+BetHistory
+Open / settled / cash-out tabs.
+Layout & Patterns
+	•	Re-uses the F12 Sidebar; adds a Sports section that surfaces useSportsCatalogue() output.
+	•	Re-uses the F12 HeaderBar; the existing deposit CTA and wallet button remain visible on every sportsbook page (the same mid-session top-up pattern that F12 established for casino).
+	•	EventList is a virtualised list powered by @tanstack/react-virtual to support 1,000+ events per league.
+Acceptance Criteria
+	•	All sportsbook routes pass the existing F12 mobile breakpoints with no horizontal scroll.
+	•	EventList initial paint <1s on a 10Mbps 4G profile.
+	•	The Scaffold keyboard shortcut /s focuses the sport search input from any sportsbook page.
+	•	An event page with a live video stream embed degrades gracefully to a scoreboard component when video is blocked by CSP or ad-blockers.
+Component F16-04 · Bet Slip + Cash-Out Experience
+Overview
+The BetSlipDrawer is a sibling of WalletDrawer. It slides in from the right, stays open across navigation inside /sport/*, and collapses to a bottom sheet on mobile.
+Functional Requirements
+	•	Single / Accumulator / System tabs. Accumulator combines all legs; System allows 2/3, 3/5, etc. combinations.
+	•	Odds-change handling: when a subscribed selection changes odds, the slip shows an inline banner with accept / reject. Until accepted, the Place Bet button is disabled.
+	•	Stake input supports fractional values in the current currency, with quick-stake chips (€5, €10, €25, max). Max is computed from useBalance() minus an operator-configured buffer.
+	•	Cash-out: on My Bets, each open bet shows a live cash-out offer (polling every 5 seconds or via SSE when available). Accepting locks the offer for 3 seconds, after which it re-quotes.
+Acceptance Criteria
+	•	Placing a bet debits the wallet within 600ms and the BetSlipDrawer collapses into a success state within the same render.
+	•	A mid-flight odds change triggers the accept / reject banner within 200ms of the change.
+	•	Cash-out offer refresh at 5s intervals has <2% failure rate on sandbox.
+	•	Insufficient balance produces an inline error and a ‘Deposit’ CTA wired to the existing CashierModal.
+Component F16-05 · Sportsbook Provider Adapter
+Overview
+One reference provider adapter must ship with the alpha so that end-to-end demos do not require a real trading contract. The adapter is the sportsbook equivalent of the existing game provider adapters.
+Adapter Contract
+interface SportsbookAdapter { listSports(): Promise<Sport[]>; listEvents(filter): Promise<Event[]>; getEvent(id): Promise<EventWithMarkets>; subscribeOdds(eventId, onChange): Unsubscribe; placeBet(bet): Promise<BetResult>; cashOutQuote(betId): Promise<CashOutQuote>; acceptCashOut(betId, quoteId): Promise<BetResult>; settle(eventId): Promise<Settlement[]>; }
+Reference Implementation
+	•	Ships a sandbox adapter backed by a mock odds feed (backend/services/sportsbook/mock-provider.js) that simulates pre-match and live events with realistic odds drift.
+	•	Sandbox mode: setting x-sandbox-mode: true pins event outcomes so QA runs are reproducible.
+	•	A NeoStrike Demo Sport event (‘NeoStrike United vs. Demo FC’) is always available so sales demos never depend on real fixtures.
+Acceptance Criteria
+	•	The mock provider produces >=500 events per day distributed across football, basketball, tennis and esports.
+	•	Settlement runs after event end within 30 seconds and credits wallets via the F9 SPI.
+	•	Adapter failures (timeout, 5xx, malformed payload) never corrupt bet state — bets are held in a VALIDATING status pending retry.
+	•	A second adapter can be plugged in without changing SDK or Scaffold code.
+Phase 4 · Fraud & Trust Surfacing
+Phase 4 is the only ongoing phase. It does not introduce a new ML stack; it surfaces the signals that the existing F11 risk engine and AFA analysis API already produce, so that fraud, compliance and VIP teams can make decisions from the Portal rather than from raw logs.
+Design principle: every fraud screen is explainable. Every flag on a player profile links to the evidence that produced it (a wager sequence, an IP match, a payment graph). No black-box scores.
+Component F17-01 · Fraud Signals Feed
+Overview
+A normalised event feed that aggregates signals from existing sources: F11 risk scorer, AFA alerts, KYC OCR anomalies, payment gateway rejections and geo-IP mismatches.
+Signal Categories
+	•	velocity — deposit / wager / withdrawal velocity outside the player's historical baseline.
+	•	ato — login from new device + geolocation jump + password reset + large withdrawal within a short window.
+	•	collusion — shared IP / device / payment fingerprint across accounts plus correlated in-game behaviour.
+	•	bonus_abuse — bonus claimed, minimum wagering reached at lowest-contribution games, then withdrawal attempt.
+	•	kyc_anomaly — OCR confidence low / reused document hash / identity data collision.
+	•	payment_fraud — chargeback, card velocity, BIN mismatch with geo-IP.
+Functional Requirements
+	•	Each signal is an event on a dedicated RabbitMQ exchange fraud.signals with a typed payload.
+	•	Portal: /fraud/feed page — time-sorted list with filters by category, severity, brand, country.
+	•	Action buttons per signal: Acknowledge, Assign to operator, Escalate (triggers AFA Tier-3 Gated action), Suppress (for known-good patterns).
+Acceptance Criteria
+	•	A signal published to the bus appears in the feed within 2 seconds.
+	•	Suppressing a signal records a suppression rule (pattern + TTL) that prevents re-fire without manual intervention.
+	•	Feed supports 10,000 signals per day per tenant without pagination jank.
+Component F17-02 · Collusion Graph Explorer
+Overview
+A visual graph of accounts linked by shared attributes. This is the single highest-value screen for fraud teams and is the hardest to replicate for competitors.
+Functional Requirements
+	•	Nodes: player accounts. Edges: shared IP, shared device fingerprint, shared payment method, shared beneficiary bank, shared KYC document hash. Each edge type has a distinct colour and can be toggled.
+	•	Interactive graph powered by a maintained open-source library (e.g. sigma.js or react-force-graph). Nodes cluster by brand.
+	•	Clicking a node opens the PlayerDetailsModal; right-click exposes ‘Suspend’, ‘Freeze withdrawals’, ‘Flag for review’.
+	•	Saved views: named queries (‘weekly collusion sweep’, ‘affiliate X conversions’) with URL-shareable state.
+Acceptance Criteria
+	•	Graph with 500 nodes and 2,000 edges renders in <1s and remains interactive at 30fps on a mid-range laptop.
+	•	Edge computation is cached; refreshing the view after five minutes re-runs the query and surfaces new edges without full reload.
+	•	Every edge carries a link to the underlying evidence (the specific IP or device row that produced the match).
+Component F17-03 · ATO Alerts Dashboard
+Overview
+A focused dashboard for Account Takeover. Collates the signals that matter for ATO: new-device logins, impossible-travel detections, password resets followed by withdrawals, 2FA disable events.
+Functional Requirements
+	•	KPI strip: open ATO alerts, ATO-suspected accounts frozen in last 24h, average resolution time, false-positive rate (operator-scored).
+	•	Alert drawer: timeline of the player's events in the 72 hours around the alert, overlaid with device, IP and session markers.
+	•	One-click remediation: Force logout, Require password reset, Require re-KYC, Freeze withdrawals for N hours. Each action is AFA-scoped and auditable.
+Acceptance Criteria
+	•	The drawer renders the 72-hour timeline within 600ms for a player with 10,000 events.
+	•	Remediation actions take effect within 5 seconds and are reflected in the player session immediately.
+	•	False-positive scoring feeds back into F11 weighting once per week (async ML loop, out of scope for manual intervention).
+Component F17-04 · Bonus Abuse & Burn-Rate Dashboard
+Overview
+Surfaces the burn-rate metric (bonus cost / GGR generated per segment) and the bonus-abuse pattern detectors that already live in bonus-management-service.js but currently have no UI.
+Functional Requirements
+	•	Burn-rate chart: stacked area by campaign, by segment, by country. Drill-down to per-player contribution.
+	•	Abuse pattern list: players flagged by ‘clear bonus then withdraw’, ‘low-contribution game farming’, ‘multi-account same-bonus’ detectors.
+	•	Suggested action per player: require extra wagering, downgrade bonus eligibility, flag for AML review.
+Acceptance Criteria
+	•	Burn-rate figures reconcile with the F10 reporting module to within €1 rounding for any given day.
+	•	Applying a suggested action updates the player's bonus eligibility immediately and writes an audit entry.
+	•	The dashboard surfaces the top 20 worst-burning campaigns of the past 30 days by default.
+Component F17-05 · Trust Score Timeline on Player Profile
+Overview
+Adds a Trust tab to PlayerDetailsModal that renders the player's F11 composite risk score over time with annotated events (KYC submitted, alert fired, remediation taken).
+Functional Requirements
+	•	Timeline chart: x = time, y = composite risk score. Shaded bands for Low / Medium / High / Critical thresholds.
+	•	Event pins on the timeline — clickable to expand into the full signal / AFA analysis.
+	•	Exportable as PDF for compliance investigations via the F14-04 export pipeline.
+Acceptance Criteria
+	•	Timeline renders for a 12-month span within 800ms.
+	•	Every pin links to an immutable audit entry so that the timeline is admissible evidence.
+	•	PDF export preserves the timeline, the event list and the player's KYC status at the time of export.
+Cross-Cutting Concerns
+Security
+	•	All new portal routes require an AFA-scoped token. No route relies on session cookies only.
+	•	PII-touching endpoints log access to the 7-year audit trail with actor, target player, fields accessed.
+	•	KYC documents, internal notes and affiliate bank details are encrypted at rest using operator-managed KMS keys.
+	•	All export artefacts (CSV, PDF) use signed URLs with 15-minute TTL. URLs never embed tenant identifiers in a guessable form.
+Observability
+	•	Every new backend endpoint emits RED metrics (Requests, Errors, Duration) to F10.
+	•	Every new SDK hook emits a mount / success / error counter to /api/v1/telemetry for baseline visibility.
+	•	SSE streams expose a connection-count gauge per tenant.
+Testing
+	•	All new backend endpoints require integration tests against a SQLite fixture and snapshot tests for response shape.
+	•	All new SDK hooks ship with a Storybook story that exercises loading, empty, error and success states.
+	•	Scaffold pages ship with Playwright smoke tests for the happy path on desktop and 375px mobile.
+Backwards Compatibility
+	•	No existing API endpoint changes shape. New features add new endpoints or new optional fields only.
+	•	Scaffold components accept feature-flag props so that operators on an older backend can disable a feature until they upgrade.
+	•	Database migrations are forward-only and idempotent.
+Accessibility
+	•	All new portal and Scaffold surfaces meet WCAG 2.1 AA (contrast, focus ring, keyboard navigation).
+	•	All interactive controls have visible focus states that inherit from the theme tokens added in F15-03.
+	•	Screen reader labels on all data tables, charts and graph visualisations (aria-label fallbacks where the visual is decorative).
+Dependencies & Risks
+Risk
+Impact
+Mitigation
+F14-02 KYC upload requires a PII-grade object store
+Blocks Phase 1
+Reuse the existing S3-compatible bucket used by KYC backend today; add KMS envelope encryption as a prerequisite task.
+F15-01 Affiliate attribution across brands is subtle
+Revenue leakage if wrong
+Ship a reconciliation report in Phase 1 exports (F14-04) before Phase 2 launches; run it manually for 4 weeks before Phase 2 GA.
+F16 Sportsbook depends on an odds provider contract
+Blocks Phase 3 GA
+Ship the alpha against the mock provider; GA is gated on the first real-provider contract, not on code readiness.
+F17 Collusion graph requires device fingerprinting
+Privacy / regulatory pushback
+Disable by default in jurisdictions with restrictive regimes; surface an operator toggle at tenant level.
+Scope creep into Fast Track's territory (CRM, gamification)
+Architectural conflict
+Every new component is reviewed against the scope boundary in the Executive Summary. CRM, XP, rank, loyalty tiers remain Fast Track.
+Delivery Plan
+Phases are independently shippable. Phase 1 components are parallelisable across two teams (F14-01/F14-03 on one, F14-02/F14-04/F14-05 on the other). Phase 2 and Phase 3 can overlap but should not share team members — the bet-slip state machine is invasive enough to warrant dedicated focus. Phase 4 is ongoing and absorbs one engineer full-time once Phase 3 ships.
+Phase
+Sprints
+Team size
+Sign-off
+Phase 1
+2–3
+2 FE + 1 BE + 0.5 PM + 0.5 QA
+Operator pilot on one tenant for 2 weeks.
+Phase 2
+3–4
+2 FE + 1 BE + 0.5 PM + 0.5 QA
+Affiliate pilot with one paying affiliate; CMS dogfooded on marketing site.
+Phase 3
+4–6
+3 FE + 2 BE + 1 PM + 1 QA
+End-to-end demo of NeoStrike United vs. Demo FC including cash-out.
+Phase 4
+Ongoing
+1 FE + 1 BE (rotating)
+Two successful fraud interventions per week attributed to the new surfaces.
+Success Metrics
+Metric
+Baseline
+Target
+Measurement
+% of operator queries resolved in-portal (Phase 1)
+~40%
+≥80%
+Operator support ticket tagging
+Time-to-KYC-decision p50 (Phase 1)
+N/A (no UI)
+≤60 seconds auto; ≤4 hours manual
+F14-02 telemetry
+Affiliate share of FTDs (Phase 2)
+0%
+≥15% within 90 days of GA
+F15-01 attribution
+Self-served theme changes per month (Phase 2)
+0
+≥1 per active tenant / month
+F15-03 audit log
+Sportsbook wager volume (Phase 3)
+0
+≥5% of total wager on pilot tenants within 60 days
+F10 BI
+Fraud interventions attributable to Phase 4 surfaces
+0
+≥2 per week per tenant after month 2
+F17 action logs
+Cross-phase: operator onboarding to first WAGER event
+Currently < 48h
+Maintained < 48h despite new surface area
+Tenant portal timestamps
+Out of Scope
+Explicitly out of scope for all four phases, to protect focus and positioning:
+	•	Replacing the Fast Track Rewards integration path or building NeoStrike's own CRM / gamification engine.
+	•	In-house trading desk, risk manager or manual odds override console for sportsbook. NeoStrike does not take market risk.
+	•	Native iOS / Android app. PWA support already exists in F12.
+	•	Crypto payment UI — an F9 architectural decision, tracked separately.
+	•	Replacement of the AFA three-tier trust model. Phase 4 surfaces signals; it does not re-govern them.
+NeoStrike Platform  ·  Phases 1–4 Consolidated PRD  ·  19 Components  ·  April 2026  ·  Confidential

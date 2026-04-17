@@ -11,9 +11,9 @@ const AgentApprovalQueue = ({ token }) => {
         if (!token) return;
         setLoading(true);
         try {
-            // Reusing the multi-purpose auth management endpoint approach
-            const res = await fetch('/api/v1/auth/agent-tokens?view=approvals', {
-                headers: { Authorization: `Bearer ${token}` }
+            const res = await fetch(`/api/v1/auth/agent-tokens?view=approvals&_t=${Date.now()}`, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: 'no-store'
             });
             if (res.ok) {
                 const data = await res.json();
@@ -46,6 +46,7 @@ const AgentApprovalQueue = ({ token }) => {
             });
 
             if (res.ok) {
+                alert(`Action successfully ${resolution}!`);
                 setResolutionNote('');
                 fetchQueue();
             } else {
@@ -68,6 +69,8 @@ const AgentApprovalQueue = ({ token }) => {
                 return `Forfeit Bonus ${payload.bonus_id} for Player ${payload.player_id}`;
             case 'player:welfare:pre-auth':
                 return `Welfare Tag "${payload.tag}" for Player ${payload.player_id}`;
+            case 'bonus:template:forfeit:human-gated':
+                return `Bulk Forfeit Template "${payload.template_id}" (Affects ${payload.affected_features || 'all'} players)`;
             default:
                 return JSON.stringify(payload);
         }

@@ -147,6 +147,22 @@ router.get('/metrics/rg', metricsLimiter, requireScope('metrics:read'), async (r
 });
 
 // =========================================================================
+// PLAYERS API (T1 — player:read)
+// =========================================================================
+
+router.get('/players/:id/restrictions', metricsLimiter, requireScope('player:read'), async (req, res, next) => {
+    try {
+        const result = await actionsService.getPlayerRestrictions(
+            req.agent.tenant_id,
+            req.params.id,
+            req.query.status
+        );
+        logT1Read(req, 'players/restrictions');
+        res.json(result);
+    } catch (err) { next(err); }
+});
+
+// =========================================================================
 // ALERTS API  (T1 read — alerts:read)
 // =========================================================================
 
@@ -296,6 +312,39 @@ router.post('/actions/players/:id/restrict', alertsLimiter, requireScope('player
 });
 
 /**
+ * POST /actions/players/:id/unrestrict
+ * T2 — Lift a temporary restriction
+ */
+router.post('/actions/players/:id/unrestrict', alertsLimiter, requireScope('player:unrestrict:pre-auth'), async (req, res, next) => {
+    try {
+        const { reason, agent_note } = req.body;
+        const result = await actionsService.unrestrictPlayer({
+            brandId: req.agent.tenant_id,
+            agentId: req.agent.agent_id,
+            playerId: req.params.id,
+            reason,
+            agentNote: agent_note,
+            requestId: req.correlationId,
+        });
+
+        await auditService.logAgentAction({
+            tenantId: req.agent.tenant_id,
+            agentId: req.agent.agent_id,
+            eventType: 'T2_ACTION',
+            actionType: 'player:unrestrict:pre-auth',
+            targetEntity: req.params.id,
+            agentNote: agent_note || reason,
+            executionResult: result,
+            policyScope: req.agent.policy_scope,
+            httpStatus: 200,
+            requestId: req.correlationId,
+        });
+
+        res.json(result);
+    } catch (err) { next(err); }
+});
+
+/**
  * POST /actions/bonuses/:id/forfeit
  * T2 — Forfeit a bonus for a player
  */
@@ -371,6 +420,7 @@ router.post('/actions/escalations', alertsLimiter, requireScope('escalation:crea
             brandId: req.agent.tenant_id,
             agentId: req.agent.agent_id,
             type, targetEntity: target_entity, payload, reason,
+            agentNote: agent_note,
             requestId: req.correlationId,
         });
 
@@ -380,6 +430,39 @@ router.post('/actions/escalations', alertsLimiter, requireScope('escalation:crea
             eventType: 'T3_PROPOSED',
             actionType: 'escalation:create',
             targetEntity: target_entity,
+            agentNote: agent_note || reason,
+            executionResult: result,
+            policyScope: req.agent.policy_scope,
+            httpStatus: 201,
+            requestId: req.correlationId,
+        });
+
+        res.status(201).json(result);
+    } catch (err) { next(err); }
+});
+
+/**
+ * POST /actions/bonuses/templates/:id/forfeit
+ * T3 — Propose forfeiture of a bonus template
+ */
+router.post('/actions/bonuses/templates/:id/forfeit', alertsLimiter, requireScope('bonus:template:forfeit:human-gated'), async (req, res, next) => {
+    try {
+        const { reason, agent_note } = req.body;
+        const result = await actionsService.proposeTemplateForfeit({
+            brandId: req.agent.tenant_id,
+            agentId: req.agent.agent_id,
+            templateId: req.params.id,
+            reason,
+            agentNote: agent_note,
+            requestId: req.correlationId,
+        });
+
+        await auditService.logAgentAction({
+            tenantId: req.agent.tenant_id,
+            agentId: req.agent.agent_id,
+            eventType: 'T3_PROPOSED',
+            actionType: 'bonus:template:forfeit:human-gated',
+            targetEntity: req.params.id,
             agentNote: agent_note || reason,
             executionResult: result,
             policyScope: req.agent.policy_scope,
@@ -408,24 +491,53 @@ router.get('/events/stream', alertsLimiter, async (req, res) => {
 
     const subId = `sse:${req.agent.tenant_id}:${req.agent.agent_id}`;
     
-    // Heartbeat every 30s to keep connection alive (important for Vercel)
+    // Heartbeat every 30s with instance stats
     const heartbeat = setInterval(() => {
-        res.write(': heartbeat\n\n');
+        const stats = webhookService.getStats();
+        res.write(`data: ${JSON.stringify({ type: 'heartbeat', ...stats })}\n\n`);
     }, 30000);
 
-    // Initial message
-    res.write(`data: ${JSON.stringify({ type: 'connected', agent_id: req.agent.agent_id })}\n\n`);
+    // Initial message with process diagnostics
+    const stats = webhookService.getStats();
+    res.write(`data: ${JSON.stringify({ 
+        type: 'connected', 
+        agent_id: req.agent.agent_id,
+        process_id: stats.pid,
+        uptime: stats.uptime_seconds
+    })}\n\n`);
 
-    const off = webhookService.onSseEvent(req.agent.agent_id, (event) => {
+    const off = webhookService.onSseEvent(req.agent.tenant_id, req.agent.agent_id, (event) => {
         // Only deliver events for this agent's brand/tenant
         if (String(event.brand_id) === String(req.agent.tenant_id)) {
             res.write(`data: ${JSON.stringify(event)}\n\n`);
         }
     });
 
+    // F13-AFA: Broadcast Fallback for Monitoring (e.g., Claude CoWork)
+    // If agent has read-level scopes, automatically subscribe to all events for this brand
+    const isMonitor = req.agent.policy_scope && (
+        req.agent.policy_scope.includes('alerts:read') || 
+        req.agent.policy_scope.includes('metrics:read') ||
+        req.agent.policy_scope.includes('*')
+    );
+    
+    let offBroadcast = () => {};
+    if (isMonitor) {
+        const broadcastTenantId = 'broadcast';
+        const broadcastAgentId = String(req.agent.tenant_id);
+        const broadcastKey = `sse:agent:${broadcastTenantId}:${broadcastAgentId}`;
+        
+        logger.info(`[AFA SSE] Setting up broadcast for ${req.agent.agent_id}`, { broadcastKey, isMonitor });
+
+        offBroadcast = webhookService.onSseEvent(broadcastTenantId, broadcastAgentId, (event) => {
+            res.write(`data: ${JSON.stringify(event)}\n\n`);
+        });
+    }
+
     req.on('close', () => {
         clearInterval(heartbeat);
         off();
+        offBroadcast();
         res.end();
     });
 });

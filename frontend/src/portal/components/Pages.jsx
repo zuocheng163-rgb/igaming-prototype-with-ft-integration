@@ -3,6 +3,8 @@ import DataTable from './DataTable';
 import { Save, RefreshCw, Shield, Bell, Lock, Gamepad2, Filter, X, Plus, Trash2, Edit, Users, BarChart2, Settings as SettingsIcon, AlertCircle, CheckCircle, Calendar, ChevronRight, ChevronLeft, Search, Award, History, TrendingUp, DollarSign } from 'lucide-react';
 import PlayerDetailsModal from './PlayerDetailsModal';
 import AgentTokensPanel from './AgentTokensPanel';
+import IntegrationsPanel from './IntegrationsPanel';
+import AfaMonitor from './AfaMonitor';
 
 // Shared per-game visual identity used in Game Management cards
 const GAME_THEMES = {
@@ -1026,11 +1028,25 @@ export const Settings = ({ token, productOffering }) => {
                     >
                         Agent Tokens
                     </button>
+                    <button 
+                        onClick={() => setActiveTab('integrations')}
+                        style={{ 
+                            padding: '6px 16px', borderRadius: '4px', border: 'none', fontSize: '0.85rem', cursor: 'pointer',
+                            background: activeTab === 'integrations' ? 'rgba(0,204,255,0.2)' : 'transparent',
+                            color: activeTab === 'integrations' ? '#00ccff' : 'var(--text-muted)',
+                            fontWeight: activeTab === 'integrations' ? 600 : 400,
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        Integrations
+                    </button>
                 </div>
             </div>
 
             {activeTab === 'agents' ? (
                 <AgentTokensPanel token={token} />
+            ) : activeTab === 'integrations' ? (
+                <IntegrationsPanel token={token} />
             ) : (
                 <>
 
@@ -1805,3 +1821,5 @@ export const Bonuses = ({ token }) => {
     );
 };
 
+
+export const Afa = AfaMonitor;

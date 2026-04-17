@@ -43,6 +43,7 @@ const OperatorLayout = ({ children, user, token, onLogout, dateRange, setDateRan
         { icon: Gamepad2, label: 'Games', id: 'games', isAdvanced: true },
         { icon: ShieldAlert, label: 'Compliance', id: 'compliance' },
         { icon: Activity, label: 'Operational Stream', id: 'operational-stream' },
+        { icon: Activity, label: 'AFA Monitor', id: 'afa' },
         { icon: Settings, label: 'Settings', id: 'settings' },
     ];
 

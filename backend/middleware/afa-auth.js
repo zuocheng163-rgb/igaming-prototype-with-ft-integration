@@ -13,6 +13,7 @@
 const jwt = require('jsonwebtoken');
 const { AfaError } = require('./afa-error');
 const { logger } = require('../services/logger');
+const supabaseService = require('../services/supabase');
 
 const AFA_JWT_SECRET = process.env.AFA_JWT_SECRET || 'afa-dev-secret-change-in-production';
 
@@ -25,28 +26,52 @@ const AFA_JWT_SECRET = process.env.AFA_JWT_SECRET || 'afa-dev-secret-change-in-p
  */
 const authenticateAgent = async (req, res, next) => {
     try {
-        // 1. Extract token from Authorization header
+        // 1. Extract token from Authorization header or Query Parameter
+        let token = '';
         const authHeader = req.headers['authorization'] || '';
-        if (!authHeader.startsWith('Bearer ')) {
+        
+        if (authHeader.startsWith('Bearer ')) {
+            token = authHeader.slice(7).trim();
+        } else if (req.query.token) {
+            // Support query param for EventSource (SSE) which doesn't support headers
+            token = req.query.token;
+        }
+
+        if (!token) {
+            logger.warn('[AFA Auth] Authentication failed: No token provided', { url: req.url });
             throw AfaError.authMissing();
         }
 
-        const token = authHeader.slice(7).trim();
-        if (!token) {
-            throw AfaError.authMissing();
-        }
+        logger.info('[AFA Auth] Token extracted', { tokenPrefix: token.substring(0, 10) + '...' });
 
         // 2. Verify JWT signature and decode
         let decoded;
-        try {
-            decoded = jwt.verify(token, AFA_JWT_SECRET, {
-                algorithms: ['HS256'],
-            });
-        } catch (jwtErr) {
-            if (jwtErr.name === 'TokenExpiredError') {
-                throw AfaError.authExpired();
+        const isSandbox = token.startsWith('token-') && (process.env.DEMO_MODE === 'true' || process.env.NODE_ENV === 'development');
+        
+        if (isSandbox) {
+            const raw = token.replace('token-', '');
+            const username = raw.split('-')[0] || 'admin';
+            decoded = {
+                agent_id: username,
+                tenant_id: 1, // Default for demo
+                policy_scope: ['*'], // Full access in demo
+                trust_tier: 'T1',
+                jti: token,
+                exp: Math.floor(Date.now() / 1000) + 86400, // 24h
+                iat: Math.floor(Date.now() / 1000),
+            };
+            logger.info('[AFA Auth] Sandbox Fallback active', { agent_id: username, token });
+        } else {
+            try {
+                decoded = jwt.verify(token, AFA_JWT_SECRET, {
+                    algorithms: ['HS256'],
+                });
+            } catch (jwtErr) {
+                if (jwtErr.name === 'TokenExpiredError') {
+                    throw AfaError.authExpired();
+                }
+                throw AfaError.authInvalid(jwtErr.message);
             }
-            throw AfaError.authInvalid(jwtErr.message);
         }
 
         // 3. Validate required claims
@@ -55,9 +80,8 @@ const authenticateAgent = async (req, res, next) => {
             throw AfaError.authInvalid('Missing required JWT claims: agent_id, tenant_id, jti');
         }
 
-        // 4. Check revocation status against DB
-        const supabaseService = require('../services/supabase');
-        if (supabaseService.client) {
+        // 4. Check revocation status against DB (Skip for Sandbox)
+        if (!isSandbox && supabaseService.client) {
             const { data: tokenRecord, error } = await supabaseService.client
                 .from('agent_tokens')
                 .select('revoked_at, ip_allowlist')
@@ -95,6 +119,8 @@ const authenticateAgent = async (req, res, next) => {
                 .eq('jti', jti)
                 .then(() => {})
                 .catch(err => logger.warn('[AFA Auth] Failed to update token usage', { error: err.message }));
+        } else if (isSandbox) {
+            logger.info('[AFA Auth] Skipping DB checks for Sandbox mode', { jti });
         }
 
         // 6. Attach agent claims to request
@@ -107,6 +133,8 @@ const authenticateAgent = async (req, res, next) => {
             exp: decoded.exp,
             iat: decoded.iat,
         };
+
+        logger.info('[AFA Auth] Authentication successful', { agent_id: req.agent.agent_id, tenant_id: req.agent.tenant_id, scopeCount: req.agent.policy_scope.length });
 
         // 7. Set correlation context
         req.correlationId = req.headers['x-correlation-id'] || require('crypto').randomUUID();

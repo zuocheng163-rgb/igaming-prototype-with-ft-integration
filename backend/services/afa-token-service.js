@@ -22,14 +22,17 @@ const SCOPE_TIER_MAP = {
     'alerts:read':              'T1',
     'alerts:subscribe':         'T1',
     'audit:read':               'T1',
+    'player:read':              'T1',
     'alerts:write:pre-auth':    'T2',
     'player:restrict:pre-auth': 'T2',
+    'player:unrestrict:pre-auth': 'T2',
     'player:welfare:pre-auth':  'T2',
     'bonus:forfeit:pre-auth':   'T2',
     'bonus:modify:pre-auth':    'T2',
     'escalation:create':        'T2',
     'player:exclude:human-gated':     'T3',
     'bonus:issue:human-gated':        'T3',
+    'bonus:template:forfeit:human-gated': 'T3',
     'compliance:submit:human-gated':  'T3',
 };
 

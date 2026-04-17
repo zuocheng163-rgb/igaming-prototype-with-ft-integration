@@ -83,6 +83,10 @@ const { featureGate } = require('./middleware/feature-gate');
 app.use(sandboxMiddleware);
 
 
+// F13-AFA: Agent-Friendly API Layer
+app.use('/api/v1/ops', require('./routes/afa'));
+app.use('/api/v1/auth', require('./routes/afa-auth'));
+
 // Routes
 app.use('/api/authenticate', authLimiter);
 app.use('/api/register', authLimiter);
@@ -94,10 +98,6 @@ app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/providers', featureGate('PROVIDERS'), require('./routes/providers'));
 app.use('/api/promotions', require('./routes/promotions'));
 app.use('/api/v1/payments', require('./routes/payments'));
-
-// F13-AFA: Agent-Friendly API Layer
-app.use('/api/v1/ops', require('./routes/afa'));
-app.use('/api/v1/auth', require('./routes/afa-auth'));
 app.get('/.well-known/agent.json', (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.json(require('./agent-manifest.json'));
@@ -116,17 +116,41 @@ app.get('/api/live-wins', async (req, res) => {
 
     if (error) throw error;
 
+    // Helper to format game_id (e.g. pragmatic:gates-of-olympus -> Gates Of Olympus, Pragmatic Play)
+    const parseGameId = (gId) => {
+      if (!gId || gId === 'Lucky Slot') return { provider: 'NeoStrike', name: 'Lucky Slot' };
+      if (gId === 'neostrike-demo') return { provider: 'NeoStrike', name: 'NeoStrike Demo Slot' };
+      
+      let [prov, ...rest] = gId.split(':');
+      let rawName = rest.join(':') || prov;
+      if (!rest.length) {
+        prov = "NeoStrike"; 
+        rawName = gId;
+      }
+      
+      let providerName = prov.charAt(0).toUpperCase() + prov.slice(1);
+      if (prov === 'pragmatic') providerName = 'Pragmatic Play';
+      if (prov === 'netent') providerName = 'NetEnt';
+      if (prov === 'playngo') providerName = "Play'n GO";
+      
+      let gameName = rawName.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      return { provider: providerName, name: gameName };
+    };
+
     // Map logs to ticker format
-    const wins = (data || []).map(log => ({
-      id: log.id,
-      player_handle: log.actor_id.substring(0, 3) + '***' + log.actor_id.slice(-2),
-      game_name: log.metadata?.request?.game_id || 'Lucky Slot',
-      provider: 'NeoStrike',
-      thumbnail_url: '',
-      win_amount: log.metadata?.request?.amount || 0,
-      currency: 'EUR',
-      timestamp: log.timestamp
-    }));
+    const wins = (data || []).map(log => {
+      const parsed = parseGameId(log.metadata?.request?.game_id);
+      return {
+        id: log.id,
+        player_handle: log.actor_id.substring(0, 3) + '***' + log.actor_id.slice(-2),
+        game_name: parsed.name,
+        provider: parsed.provider,
+        thumbnail_url: '',
+        win_amount: log.metadata?.request?.amount || 0,
+        currency: 'EUR',
+        timestamp: log.timestamp
+      };
+    });
 
     res.json({ wins });
   } catch (err) {

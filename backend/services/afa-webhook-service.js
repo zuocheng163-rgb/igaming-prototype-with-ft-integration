@@ -10,8 +10,7 @@
 const { logger } = require('./logger');
 const crypto = require('crypto');
 const axios = require('axios'); // For webhook POST delivery
-const EventEmitter = require('events');
-const events = new EventEmitter();
+const events = require('./afa-events');
 
 // Max retries for webhook delivery
 const MAX_DELIVERY_RETRIES = 3;
@@ -19,6 +18,7 @@ const RETRY_BACKOFF_MS = 2000;
 
 // Supported event types from PRD Section 10.1
 const SUPPORTED_EVENT_TYPES = [
+    // Responsible Gaming
     'rg_alert_created',
     'rg_alert_escalated',
     'transaction_anomaly_detected',
@@ -27,7 +27,29 @@ const SUPPORTED_EVENT_TYPES = [
     'player_risk_score_changed',
     'gamstop_match_detected',
     'bonus_integrity_flag_raised',
+    'REALITY_CHECK', 'AFFORDABILITY_CHECK', 'MANDATORY_BREAK',
+    // Financial Events (Simulator + Production)
+    'payment',
+    'deposit',
+    'withdrawal',
+    'casino',
+    'balance',
+    'bonus',
+    // Player Lifecycle
+    'login',
+    'logout',
+    'registration',
+    'player_update',
+    // Alias event types used by FT integration
+    'wallet:deposit',
+    'wallet:credit',
+    'wallet:debit',
+    'wallet:bonus_credit',
+    'wallet:withdrawal',
 ];
+
+let totalEventsProcessed = 0;
+const startTime = Date.now();
 
 class AfaWebhookService {
     constructor(supabaseService) {
@@ -178,20 +200,41 @@ class AfaWebhookService {
      */
     async processEvent(eventType, payload, brandId) {
         if (!SUPPORTED_EVENT_TYPES.includes(eventType)) {
+            logger.debug(`[AFA Webhook] Ignoring unsupported event type: ${eventType}`);
             return; // Not an AFA-supported event
         }
 
-        // 1. Fetch active subscriptions for this brand and event type
-        const { data: subs, error } = await this.db.client
+        // 1. Fetch active subscriptions for this brand
+        const { data: allSubs, error } = await this.db.client
             .from('webhook_subscriptions')
             .select('*')
             .eq('tenant_id', String(brandId))
-            .eq('active', true)
-            .contains('event_types', [eventType]);
+            .eq('active', true);
 
-        if (error || !subs || subs.length === 0) return;
+        if (error || !allSubs || allSubs.length === 0) {
+            // Still check for specific broadcast to SSE even if no DB subs exist
+            const broadcastKey = `sse:agent:broadcast:${brandId}`;
+            const broadcastEnvelope = {
+                event_id: crypto.randomUUID(),
+                event_type: eventType,
+                occurred_at: new Date().toISOString(),
+                brand_id: Number(brandId),
+                data: payload,
+            };
+            events.emit(broadcastKey, broadcastEnvelope);
+            
+            logger.debug(`[AFA Webhook] No DB subscriptions for brand ${brandId}. Broadcast only.`);
+            return;
+        }
 
-        logger.info(`[AFA Webhook] Fanning out event "${eventType}" to ${subs.length} subscribers`, { brandId });
+        // Filter subscriptions: match specific eventType OR wildcard '*'
+        const subs = allSubs.filter(s => 
+            (s.event_types && s.event_types.includes(eventType)) || 
+            (s.event_types && s.event_types.includes('*'))
+        );
+
+        totalEventsProcessed++;
+        logger.info(`[AFA Webhook] Fanning out event "${eventType}" to ${subs.length} subscribers (via wildcard/match)`, { brandId, totalEventsProcessed });
 
         // 2. Wrap payload in standard AFA envelope
         const envelope = {
@@ -202,7 +245,13 @@ class AfaWebhookService {
             data: payload,
         };
 
-        // 3. Deliver to each subscriber
+        // 3. Emit to Monitoring Broadcast (for agents with alerts:read / metrics:read)
+        const broadcastKey = `sse:agent:broadcast:${brandId}`;
+        const listenerCount = events.listenerCount(broadcastKey);
+        logger.info(`[AFA Webhook] Emitting to broadcast key: ${broadcastKey} (Listeners: ${listenerCount})`, { eventType });
+        events.emit(broadcastKey, envelope);
+
+        // 4. Deliver to each DB subscriber
         for (const sub of subs) {
             // Apply filtering (basic key-value matching for now)
             if (sub.filter && Object.keys(sub.filter).length > 0) {
@@ -212,7 +261,9 @@ class AfaWebhookService {
 
             if (sub.is_sse) {
                 // Emit to local SSE listener (will only catch if client is on same instance)
-                events.emit(`sse:${brandId}:${sub.agent_id}`, envelope);
+                const sseKey = `sse:agent:${brandId}:${sub.agent_id}`;
+                logger.debug(`[AFA Webhook] Emitting SSE event to ${sseKey}`);
+                events.emit(sseKey, envelope);
                 events.emit(`sse:${sub.id}`, envelope);
             } else if (sub.callback_url) {
                 // Fire-and-forget background delivery
@@ -260,9 +311,26 @@ class AfaWebhookService {
     /**
      * SSE Event Listener for routes.
      */
-    onSseEvent(subId, callback) {
-        events.on(`sse:${subId}`, callback);
-        return () => events.off(`sse:${subId}`, callback);
+    onSseEvent(tenantId, agentId, callback) {
+        const key = `sse:agent:${tenantId}:${agentId}`;
+        logger.info(`[AFA Webhook] Adding SSE listener on key: ${key}`);
+        events.on(key, callback);
+        return () => {
+            logger.info(`[AFA Webhook] Removing SSE listener on key: ${key}`);
+            events.off(key, callback);
+        };
+    }
+
+    /**
+     * Get instance diagnostics
+     */
+    getStats() {
+        return {
+            pid: process.pid,
+            uptime_seconds: Math.floor((Date.now() - startTime) / 1000),
+            total_events_processed: totalEventsProcessed,
+            supported_types_count: SUPPORTED_EVENT_TYPES.length
+        };
     }
 }
 

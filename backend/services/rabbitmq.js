@@ -13,8 +13,38 @@ class RabbitMQService {
      * and avoids the wrapping mess caused by the HTTP Management API.
      */
     async publishEvent(routingKey, payload, type = null, options = {}) {
+        // 1. F13-AFA Loopback Hook: Process AFA events even if RabbitMQ is disabled/mocked
+        // We use a late require to avoid circular dependency
+        try {
+            const { AfaWebhookService } = require('./afa-webhook-service');
+            const supabaseService = require('./supabase');
+            const afaWebhookService = new AfaWebhookService(supabaseService);
+            
+            // Extract event type for matching
+            let eventType = type || (payload && payload.type) || routingKey || this.defaultQueue;
+            
+            // Map internal event types to AFA supported types
+            if (eventType.includes('balance')) eventType = 'balance';
+            else if (eventType.includes('bonus')) eventType = 'bonus';
+            else if (eventType.includes('payment') || eventType.includes('deposit')) eventType = 'deposit';
+            else if (eventType.includes('withdrawal')) eventType = 'withdrawal';
+            
+            // Extract brandId
+            const brandId = (payload && (payload.brand_id || payload.brandId || payload.tenant_id)) || 1;
+            
+            logger.info(`[AFA Hook] Processing event for AFA stream (Loopback)`, { eventType, brandId });
+            
+            // We do NOT await this to avoid blocking the main flow
+            afaWebhookService.processEvent(eventType, payload, brandId).catch(err => {
+                logger.error('[AFA Hook] Event processing failed', { eventType, error: err.message });
+            });
+        } catch (hookErr) {
+            logger.info('[AFA Hook] Failed to initialize hook', { error: hookErr.message });
+        }
+
+        // 2. Physical RabbitMQ Publishing
         if (!this.amqpUrl) {
-            logger.warn('[RabbitMQ] CLOUDAMQP_URL not set. Asynchronous event publishing is disabled.');
+            logger.warn('[RabbitMQ] CLOUDAMQP_URL not set. Skipping physical publish.');
             return false;
         }
 
@@ -45,29 +75,6 @@ class RabbitMQService {
             
             if (published) {
                 logger.debug(`[RabbitMQ] Published to ${targetRoutingKey}`, { type: properties.type });
-                
-                // F13-AFA: Hook into system events for AFA Webhooks
-                // We use a late require to avoid circular dependency: 
-                // supabaseService -> rabbitmq -> afaWebhookService -> supabaseService
-                try {
-                    const { AfaWebhookService } = require('./afa-webhook-service');
-                    const supabaseService = require('./supabase');
-                    const afaWebhookService = new AfaWebhookService(supabaseService);
-                    
-                    // The routingKey is often 'user.ID.type' or 'payments.confirmed'
-                    // We extract the type for AFA matching if it's not explicitly provided
-                    const eventType = type || (properties.type) || targetRoutingKey;
-                    
-                    // We need a brandId. If not in payload, we might assume 1 for PoC or try to extract it
-                    const brandId = (payload && (payload.brand_id || payload.brandId)) || 1;
-                    
-                    afaWebhookService.processEvent(eventType, payload, brandId).catch(err => {
-                        logger.error('[AFA Hook] Event processing failed', { eventType, error: err.message });
-                    });
-                } catch (hookErr) {
-                    // Silently fail hook to not disrupt core RabbitMQ publishing
-                    logger.debug('[AFA Hook] Not available or failed', { error: hookErr.message });
-                }
             }
 
             // Close gracefully

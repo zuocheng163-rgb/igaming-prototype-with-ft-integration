@@ -10,14 +10,19 @@ const SCOPE_DEFINITIONS = [
     { scope: 'alerts:read',                  tier: 'T1', label: 'Read Alerts',                  desc: 'Alert list, detail, risk scores' },
     { scope: 'alerts:subscribe',             tier: 'T1', label: 'Subscribe to Alerts',           desc: 'Webhook & SSE subscription management' },
     { scope: 'audit:read',                   tier: 'T1', label: 'Read Audit',                   desc: 'Agent action history, policy log' },
+    { scope: 'player:read',                  tier: 'T1', label: 'Read Players',                 desc: 'View player details, balances, and restrictions' },
+
     { scope: 'alerts:write:pre-auth',        tier: 'T2', label: 'Update Alert Status',          desc: 'Acknowledge, resolve, escalate alerts' },
     { scope: 'player:restrict:pre-auth',     tier: 'T2', label: 'Restrict Players',             desc: 'Temporary player restriction within policy limits' },
+    { scope: 'player:unrestrict:pre-auth',   tier: 'T2', label: 'Unrestrict Players',           desc: 'Remove active player restrictions within limits' },
     { scope: 'player:welfare:pre-auth',      tier: 'T2', label: 'Welfare Tag',                  desc: 'Welfare outreach tagging' },
     { scope: 'bonus:forfeit:pre-auth',       tier: 'T2', label: 'Forfeit Bonuses',              desc: 'Bonus forfeiture within policy bounds' },
     { scope: 'bonus:modify:pre-auth',        tier: 'T2', label: 'Modify Bonuses',               desc: 'Extend bonus expiry within policy bounds' },
     { scope: 'escalation:create',            tier: 'T2', label: 'Create Escalations',           desc: 'Submit pending approvals for T3 review' },
+
     { scope: 'player:exclude:human-gated',   tier: 'T3', label: 'Propose Exclusion',            desc: 'Propose permanent exclusion (needs approval)' },
     { scope: 'bonus:issue:human-gated',      tier: 'T3', label: 'Propose Bulk Bonus',           desc: 'Propose bulk bonus issuance (needs approval)' },
+    { scope: 'bonus:template:forfeit:human-gated', tier: 'T3', label: 'Propose Template Forfeit', desc: 'Propose active template forfeiture (needs approval)' },
     { scope: 'compliance:submit:human-gated',tier: 'T3', label: 'Propose Compliance Report',    desc: 'Submit compliance report (needs approval)' },
 ];
 

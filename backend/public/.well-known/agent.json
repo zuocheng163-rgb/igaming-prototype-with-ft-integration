@@ -1,0 +1,49 @@
+{
+    "schema_version": "1.0",
+    "name": "NeoStrike Agent-Friendly API",
+    "description": "Autonomous operation layer for NeoStrike iGaming Platform.",
+    "api_base_url": "/api/v1/ops",
+    "openapi_spec": "/api/v1/ops/openapi.json",
+    "auth": {
+        "type": "bearer",
+        "header": "Authorization",
+        "token_format": "JWT",
+        "issuance_url": "/api/v1/auth/agent-tokens"
+    },
+    "capabilities": {
+        "metrics": {
+            "description": "GGR, Player, and Payment analytics",
+            "tier": "T1",
+            "scopes": ["metrics:read"]
+        },
+        "alerts": {
+            "description": "Real-time risk and compliance alerts",
+            "tier": "T1",
+            "scopes": ["alerts:read", "alerts:subscribe"]
+        },
+        "player_operations": {
+            "description": "Restrict, unrestrict, and tag players",
+            "tier": "T2",
+            "scopes": ["player:read", "player:restrict:pre-auth", "player:unrestrict:pre-auth", "player:welfare:pre-auth"]
+        },
+        "bonus_management": {
+            "description": "Forfeit play-level bonuses",
+            "tier": "T2",
+            "scopes": ["bonus:forfeit:pre-auth"]
+        },
+        "escalations": {
+            "description": "Request human review for high-impact actions",
+            "tier": "T3",
+            "scopes": ["escalation:create"]
+        }
+    },
+    "webhooks": {
+        "events": [
+            "rg_alert_created",
+            "rg_alert_escalated",
+            "balance_update",
+            "KYC_UPDATE",
+            "MANDATORY_BREAK"
+        ]
+    }
+}
