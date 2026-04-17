@@ -11,6 +11,9 @@ export * from './hooks/useProfile';
 export * from './hooks/useGameLaunch';
 export * from './hooks/useSeamlessWalletBridge';
 
+// Sportsbook Hooks (F16-02)
+export * from './hooks/useSportsbook';
+
 // UI Components
 export * from './components';
 

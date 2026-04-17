@@ -12,7 +12,14 @@ import {
     ChevronLeft,
     ChevronRight,
     Command,
-    Activity
+    Activity,
+    Download,
+    Globe,
+    Megaphone,
+    FileText,
+    Network,
+    Award,
+    Trophy
 } from 'lucide-react';
 import SearchOverlay from './SearchOverlay';
 import NotificationCenter from './NotificationCenter';
@@ -41,7 +48,17 @@ const OperatorLayout = ({ children, user, token, onLogout, dateRange, setDateRan
         { icon: Wallet, label: 'Wallet', id: 'wallet' },
         { icon: Bell, label: 'Bonuses', id: 'bonuses', isAdvanced: true },
         { icon: Gamepad2, label: 'Games', id: 'games', isAdvanced: true },
+        { icon: Trophy, label: 'Sports', id: 'sportsbook', path: '/portal/sportsbook' },
         { icon: ShieldAlert, label: 'Compliance', id: 'compliance' },
+        // Phase 1
+        { icon: Download, label: 'Reports', id: 'reports', path: '/portal/reports' },
+        // Phase 2
+        { icon: Megaphone, label: 'Affiliates', id: 'affiliates', path: '/portal/marketing/affiliates' },
+        { icon: FileText, label: 'CMS', id: 'cms', path: '/portal/marketing/cms' },
+        // Phase 4
+        { icon: Network, label: 'Fraud Feed', id: 'fraud-feed', path: '/portal/fraud/feed' },
+        { icon: ShieldAlert, label: 'ATO Alerts', id: 'ato', path: '/portal/fraud/ato' },
+        { icon: Award, label: 'Bonus Abuse', id: 'bonus-abuse', path: '/portal/fraud/bonus-abuse' },
         { icon: Activity, label: 'Operational Stream', id: 'operational-stream' },
         { icon: Activity, label: 'AFA Monitor', id: 'afa' },
         { icon: Settings, label: 'Settings', id: 'settings' },
@@ -133,12 +150,13 @@ const OperatorLayout = ({ children, user, token, onLogout, dateRange, setDateRan
 
                     <nav className="sidebar-nav">
                         {filteredNavItems.map((item) => {
-                            const isActive = window.location.pathname === (item.id === 'dashboard' ? '/portal' : `/portal/${item.id}`);
+                            const itemPath = item.path || (item.id === 'dashboard' ? '/portal' : `/portal/${item.id}`);
+                            const isActive = window.location.pathname === itemPath || window.location.pathname.startsWith(itemPath + '/');
                             return (
                                 <div
                                     key={item.id}
                                     className={`nav-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => handleNavigation(item.id === 'dashboard' ? '/portal' : `/portal/${item.id}`)}
+                                    onClick={() => handleNavigation(itemPath)}
                                 >
                                     <item.icon className="nav-icon" size={20} style={{ color: isActive ? 'var(--accent-gold)' : 'var(--text-muted)' }} />
                                     {!isSidebarCollapsed && <span className="nav-label" style={{ color: isActive ? 'white' : 'var(--text-muted)' }}>{item.label}</span>}

@@ -21,6 +21,7 @@ const ICONS = {
     providers:  'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
     contact:    'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
     wheel:      'M12 2a10 10 0 100 20A10 10 0 0012 2zM12 6v6l4 2',
+    sports:     'M12 2a10 10 0 100 20A10 10 0 0012 2zm0 0c2.5 5 2.5 15 0 20M2 12c5-2.5 15-2.5 20 0M4.93 4.93c3.5 2 7.64 3.07 7.07 3.07-.57 0 3.57-1.07 7.07-3.07M4.93 19.07c3.5-2 7.64-3.07 7.07-3.07-.57 0 3.57 1.07 7.07 3.07',
     chevronDown:'M6 9l6 6 6-6',
     hamburger:  'M3 12h18M3 6h18M3 18h18',
     close:      'M18 6L6 18M6 6l12 12',
@@ -246,6 +247,7 @@ export const Sidebar = ({ activePage = 'home', onNavigate, isOpen, onClose, isAu
                 <NavItem icon={ICONS.social}    label="Social Games"      active={activePage==='social'}    onClick={() => nav('social')}    collapsed={isCollapsed} />
                 <NavItem icon={ICONS.table}     label="Table Games"       active={activePage==='table'}     onClick={() => nav('table')}     collapsed={isCollapsed} />
                 <NavItem icon={ICONS.providers} label="Providers"         active={activePage==='providers'} onClick={() => nav('providers')} collapsed={isCollapsed} />
+                <NavItem icon={ICONS.sports}    label="Sports"            active={activePage?.startsWith('sport')} onClick={() => nav('sport')} collapsed={isCollapsed} />
 
                 {/* Spacer */}
                 <div style={{ flex: 1 }} />
