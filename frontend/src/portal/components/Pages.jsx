@@ -1805,3 +1805,21 @@ export const Bonuses = ({ token }) => {
     );
 };
 
+
+// ── Phase 1: Admin UX Parity ──────────────────────────────────────────────────
+export { default as RolesPanel } from './RolesPanel';
+export { default as KYCReviewPanel } from './KYCReviewPanel';
+export { ExportsPanel } from './ExportsPanel';
+export { CountryRulesPanel } from './CountryRulesPanel';
+
+// ── Phase 2: Commercial Modules ───────────────────────────────────────────────
+export { default as AffiliatesPanel } from './AffiliatesPanel';
+export { CMSPanel } from './CMSPanel';
+export { ThemePanel } from './ThemePanel';
+export { I18nPanel } from './I18nPanel';
+
+// ── Phase 4: Fraud & Trust Surfacing ─────────────────────────────────────────
+export { FraudFeedPanel } from './FraudFeedPanel';
+export { CollusionGraph } from './CollusionGraph';
+export { ATODashboard } from './ATODashboard';
+export { BonusAbusePanel } from './BonusAbusePanel';

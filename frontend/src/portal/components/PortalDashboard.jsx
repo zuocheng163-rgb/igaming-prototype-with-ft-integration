@@ -4,7 +4,12 @@ import OperatorLayout from './OperatorLayout';
 import GGRTrendChart from './GGRTrendChart';
 import KPICard from './KPICard';
 import { Users, TrendingUp, CheckCircle, ShieldAlert, RefreshCw } from 'lucide-react';
-import { Players, Wallet, Games, Compliance, Settings, Bonuses } from './Pages';
+import {
+    Players, Wallet, Games, Compliance, Settings, Bonuses,
+    RolesPanel, KYCReviewPanel, ExportsPanel, CountryRulesPanel,
+    AffiliatesPanel, CMSPanel, ThemePanel, I18nPanel,
+    FraudFeedPanel, CollusionGraph, ATODashboard, BonusAbusePanel
+} from './Pages';
 import OperationalStream from './OperationalStream';
 import FastTrackStatusWidget from './FastTrackStatusWidget';
 import ActiveProvidersWidget from './ActiveProvidersWidget';
@@ -98,9 +103,21 @@ const PortalDashboard = ({ user, token, productOffering, onLogout }) => {
         if (currentPath.includes('/portal/players')) return <Players user={user} token={token} />;
         if (currentPath.includes('/portal/wallet')) return <Wallet user={user} token={token} />;
         if (currentPath.includes('/portal/games')) return <Games user={user} token={token} />;
+        if (currentPath.includes('/portal/compliance/kyc')) return <KYCReviewPanel token={token} user={user} />;
         if (currentPath.includes('/portal/compliance')) return <Compliance user={user} token={token} />;
         if (currentPath.includes('/portal/bonuses')) return <Bonuses token={token} />;
+        if (currentPath.includes('/portal/settings/roles')) return <RolesPanel token={token} user={user} />;
+        if (currentPath.includes('/portal/settings/countries')) return <CountryRulesPanel token={token} user={user} />;
+        if (currentPath.includes('/portal/settings/theme')) return <ThemePanel token={token} user={user} />;
+        if (currentPath.includes('/portal/settings/i18n')) return <I18nPanel token={token} user={user} />;
         if (currentPath.includes('/portal/settings')) return <Settings user={user} token={token} productOffering={productOffering} />;
+        if (currentPath.includes('/portal/reports')) return <ExportsPanel token={token} user={user} />;
+        if (currentPath.includes('/portal/marketing/affiliates')) return <AffiliatesPanel token={token} user={user} />;
+        if (currentPath.includes('/portal/marketing/cms')) return <CMSPanel token={token} user={user} />;
+        if (currentPath.includes('/portal/fraud/feed')) return <FraudFeedPanel token={token} user={user} />;
+        if (currentPath.includes('/portal/fraud/collusion')) return <CollusionGraph token={token} user={user} />;
+        if (currentPath.includes('/portal/fraud/ato')) return <ATODashboard token={token} user={user} />;
+        if (currentPath.includes('/portal/fraud/bonus-abuse')) return <BonusAbusePanel token={token} user={user} />;
         if (currentPath.includes('/portal/operational-stream')) return <OperationalStream user={user} token={token} />;
 
         return (

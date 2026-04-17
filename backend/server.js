@@ -15,6 +15,9 @@ const http = require('http');
 const cors = require('cors');
 const supabaseService = require('./services/supabase');
 const operatorRoutes = require('./routes/operator');
+const phase1Routes = require('./routes/phase1');
+const phase2Routes = require('./routes/phase2');
+const phase4Routes = require('./routes/phase4');
 // const { initSocket } = require('./services/socket');
 
 const helmet = require('helmet');
@@ -98,6 +101,19 @@ app.use('/api/v1/payments', require('./routes/payments'));
 // F13-AFA: Agent-Friendly API Layer
 app.use('/api/v1/ops', require('./routes/afa'));
 app.use('/api/v1/auth', require('./routes/afa-auth'));
+
+// Phase 1: Admin UX Parity (F14-01 through F14-05)
+app.use('/api', phase1Routes);
+
+// Phase 2: Affiliates, CMS, Themes (F15-01 through F15-04)
+app.use('/api', phase2Routes);
+app.use('/r', phase2Routes.trackingRouter);
+
+// Phase 4: Fraud & Trust Intelligence (F17-01 through F17-05)
+app.use('/api', phase4Routes);
+
+// Phase 3: Sportsbook Alpha (F16-01 through F16-05)
+app.use('/api/v1', require('./routes/sportsbook'));
 app.get('/.well-known/agent.json', (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.json(require('./agent-manifest.json'));

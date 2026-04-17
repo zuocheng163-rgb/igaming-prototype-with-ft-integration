@@ -1,10 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { X, Eye, EyeOff, User, Mail, Phone, MapPin, Calendar, Shield } from 'lucide-react';
+import { PlayerNotesPanel } from './PlayerNotesPanel';
+import { TrustTimeline } from './TrustTimeline';
+
+const TABS = [
+    { id: 'profile', label: 'Profile' },
+    { id: 'notes', label: 'Notes' },
+    { id: 'trust', label: 'Trust Score' },
+];
 
 const PlayerDetailsModal = ({ userId, token, onClose }) => {
     const [player, setPlayer] = useState(null);
     const [loading, setLoading] = useState(true);
     const [revealed, setRevealed] = useState(false);
+    const [activeTab, setActiveTab] = useState('profile');
 
     useEffect(() => {
         if (!userId || !token) return;
@@ -44,24 +53,55 @@ const PlayerDetailsModal = ({ userId, token, onClose }) => {
                 <button className="modal-close-prominent" onClick={onClose}>
                     <X size={18} />
                 </button>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '12px', color: 'white' }}>
                         <User size={24} />
                         Player Details
                     </h2>
                 </div>
 
+                {/* Tab navigation */}
+                <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0' }}>
+                    {TABS.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            style={{
+                                padding: '8px 16px',
+                                background: 'none',
+                                border: 'none',
+                                borderBottom: activeTab === tab.id ? '2px solid var(--accent-gold, #ffd700)' : '2px solid transparent',
+                                color: activeTab === tab.id ? 'white' : 'var(--text-muted, #888)',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: activeTab === tab.id ? '600' : '400',
+                                marginBottom: '-1px',
+                            }}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
                 <div className="modal-inner-scroll">
 
-                    {loading ? (
+                    {activeTab === 'notes' && (
+                        <PlayerNotesPanel playerId={userId} token={token} />
+                    )}
+
+                    {activeTab === 'trust' && (
+                        <TrustTimeline playerId={userId} token={token} />
+                    )}
+
+                    {activeTab === 'profile' && loading ? (
                         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                             Loading player details...
                         </div>
-                    ) : !player ? (
+                    ) : activeTab === 'profile' && !player ? (
                         <div style={{ textAlign: 'center', padding: '40px', color: '#ff4d4d' }}>
                             Failed to load player details
                         </div>
-                    ) : (
+                    ) : activeTab === 'profile' && (
                         <>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
                                 <div>

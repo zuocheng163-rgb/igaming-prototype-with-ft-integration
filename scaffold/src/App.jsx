@@ -8,10 +8,12 @@ import { FastTrackFeed } from './components/FastTrackFeed';
 import { AlertModal } from './components/AlertModal';
 import { SDKConsole } from './components/SDKConsole';
 import { OfflineState, InstallPrompt } from '@neostrike/sdk';
+import { SportsLobby, LeagueBrowser, EventList, EventPage, BetSlipDrawer, BetHistory } from './components/sportsbook';
 
 function AppInner({ onLoginSuccess, onLogoutSuccess }) {
     const { player, login, isAuthenticated, logout } = useSession();
     const [isWalletOpen, setWalletOpen] = useState(false);
+    const [isBetSlipOpen, setBetSlipOpen] = useState(false);
     const [activePage, setActivePage] = useState('home');
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -76,11 +78,27 @@ function AppInner({ onLoginSuccess, onLogoutSuccess }) {
 
                 {/* Page Content */}
                 <main style={{ flex: 1, padding: 'var(--space-xl)' }}>
-                    <GameLobby activePage={activePage} onNavigate={setActivePage} />
+                    {activePage === 'sport' && <SportsLobby onNavigate={setActivePage} />}
+                    {activePage?.startsWith('sport-leagues-') && (
+                        <LeagueBrowser sportSlug={activePage.replace('sport-leagues-', '')} onNavigate={setActivePage} />
+                    )}
+                    {activePage?.startsWith('sport-events-') && (
+                        <EventList league={activePage.replace('sport-events-', '')} onNavigate={setActivePage}
+                            onAddToBetSlip={() => setBetSlipOpen(true)} />
+                    )}
+                    {activePage?.startsWith('sport-event-') && (
+                        <EventPage eventId={parseInt(activePage.replace('sport-event-', ''))} onNavigate={setActivePage}
+                            onAddToBetSlip={() => setBetSlipOpen(true)} />
+                    )}
+                    {activePage === 'sport-my-bets' && <BetHistory />}
+                    {!activePage?.startsWith('sport') && (
+                        <GameLobby activePage={activePage} onNavigate={setActivePage} />
+                    )}
                 </main>
             </div>
 
             <WalletDrawer isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} player={player} />
+            <BetSlipDrawer isOpen={isBetSlipOpen} onClose={() => setBetSlipOpen(false)} onOpenCashier={() => setWalletOpen(true)} />
             <AlertModal />
             <SDKConsole />
             <FastTrackFeed />
