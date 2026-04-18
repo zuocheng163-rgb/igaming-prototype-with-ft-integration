@@ -120,8 +120,8 @@ export const SportsbookOverview = ({ token, user }) => {
                                     <td style={{ padding: '10px 14px', color: '#fff', fontSize: '13px' }}>
                                         {ev.home_team} <span style={{ color: '#555' }}>vs</span> {ev.away_team}
                                     </td>
-                                    <td style={{ padding: '10px 14px', color: '#888', fontSize: '12px' }}>{ev.league_name || ev.league || '—'}</td>
-                                    <td style={{ padding: '10px 14px', color: '#888', fontSize: '12px' }}>{ev.sport || '—'}</td>
+                                    <td style={{ padding: '10px 14px', color: '#888', fontSize: '12px' }}>{ev.league_name || (typeof ev.league === 'string' ? ev.league : ev.league?.name) || '—'}</td>
+                                    <td style={{ padding: '10px 14px', color: '#888', fontSize: '12px' }}>{typeof ev.sport === 'string' ? ev.sport : ev.sport?.name || '—'}</td>
                                     <td style={{ padding: '10px 14px' }}><StatusBadge status={ev.status} /></td>
                                     <td style={{ padding: '10px 14px', color: '#666', fontSize: '12px' }}>
                                         {ev.start_ts ? new Date(ev.start_ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
