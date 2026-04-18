@@ -11,6 +11,8 @@ import {
     FraudFeedPanel, CollusionGraph, ATODashboard, BonusAbusePanel
 } from './Pages';
 import OperationalStream from './OperationalStream';
+import SportsbookOverview from './SportsbookOverview';
+import AfaMonitor from './AfaMonitor';
 import FastTrackStatusWidget from './FastTrackStatusWidget';
 import ActiveProvidersWidget from './ActiveProvidersWidget';
 
@@ -118,6 +120,8 @@ const PortalDashboard = ({ user, token, productOffering, onLogout }) => {
         if (currentPath.includes('/portal/fraud/collusion')) return <CollusionGraph token={token} user={user} />;
         if (currentPath.includes('/portal/fraud/ato')) return <ATODashboard token={token} user={user} />;
         if (currentPath.includes('/portal/fraud/bonus-abuse')) return <BonusAbusePanel token={token} user={user} />;
+        if (currentPath.includes('/portal/sportsbook')) return <SportsbookOverview token={token} user={user} />;
+        if (currentPath.includes('/portal/afa')) return <AfaMonitor token={token} />;
         if (currentPath.includes('/portal/operational-stream')) return <OperationalStream user={user} token={token} />;
 
         return (
