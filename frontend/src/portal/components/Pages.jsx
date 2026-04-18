@@ -341,13 +341,24 @@ export const Wallet = ({ user, token }) => {
             .catch(() => setLoading(false));
     };
 
+    const defaultFilters = { transaction_id: '', user: '', type: '', amount: '', date: '', status: '' };
+
     useEffect(() => {
-        // Load persisted filters from sessionStorage
+        // Load persisted filters from sessionStorage; always merge with defaults to
+        // avoid controlled→uncontrolled warnings when a partial filter object is stored.
         const savedFilters = sessionStorage.getItem('transactionFilters');
         if (savedFilters) {
-            const parsed = JSON.parse(savedFilters);
-            setFilters(parsed);
-            fetchData(1, parsed);
+            try {
+                const parsed = JSON.parse(savedFilters);
+                // 'GGR' is a derived metric, not a real transaction type — clear it
+                // so the wallet page shows all transactions for that date range instead.
+                if (parsed.type === 'GGR') parsed.type = '';
+                const merged = { ...defaultFilters, ...parsed };
+                setFilters(merged);
+                fetchData(1, merged);
+            } catch (_) {
+                fetchData();
+            }
         } else {
             fetchData();
         }
@@ -384,6 +395,14 @@ export const Wallet = ({ user, token }) => {
         { header: 'Date', accessor: 'date', render: row => new Date(row.date).toLocaleString() }
     ];
 
+    // Detect if we were navigated here from the GGR KPI card (stored before type was cleared)
+    const [isGgrView] = useState(() => {
+        try {
+            const saved = sessionStorage.getItem('transactionFilters');
+            return saved ? JSON.parse(saved)?.type === 'GGR' : false;
+        } catch (_) { return false; }
+    });
+
     return (
         <div className="page-container" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -393,6 +412,14 @@ export const Wallet = ({ user, token }) => {
                     {refreshing ? 'Refreshing...' : 'Refresh'}
                 </button>
             </div>
+
+            {/* GGR context banner — shown when navigated from the dashboard GGR KPI */}
+            {isGgrView && (
+                <div style={{ background: 'rgba(0,204,255,0.06)', border: '1px solid rgba(0,204,255,0.2)', borderRadius: '8px', padding: '10px 16px', marginBottom: '16px', fontSize: '13px', color: '#aaa', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ color: '#00ccff', fontWeight: '600' }}>ℹ GGR note:</span>
+                    Dashboard GGR is computed as <em style={{ color: '#fff', marginLeft: 4, marginRight: 4 }}>total debits − total credits</em> from wallet audit logs (all game rounds). The transactions shown here are individual ledger records; their net sum for the selected period equals the GGR figure on the dashboard.
+                </div>
+            )}
 
             {/* Filter Row */}
             <div className="glass-panel" style={{ padding: '16px', marginBottom: '16px' }}>

@@ -181,56 +181,75 @@ const pushEventWithRetry = async (userId, eventType, payload, options = {}, retr
             const betTypeMap = { SINGLE: 'Single', MULTI: 'Multi', SYSTEM: 'System' };
             const ftBetType = betTypeMap[(payload.bet_type || '').toUpperCase()] || 'Single';
 
-            // Build bets[] array from stored leg data
-            // Each leg has: event_home, event_away, market_type, selection_name,
-            //               odds_at_placement, league_name, sport_name, event_start_ts, is_live
-            const bets = (payload.legs || []).map(leg => ({
-                event_name: `${leg.event_home} vs ${leg.event_away}`,
-                tournament_name: leg.league_name || 'Undefined',
-                sports_name: leg.sport_name || 'Undefined',
-                match_start: leg.event_start_ts || timestamp,
-                market: leg.market_type || 'Undefined',
-                odds: parseFloat(leg.odds_at_placement || 1.0),
-                is_live: leg.is_live || false,
-                is_free_bet: payload.is_free_bet || false,
-                is_risk_free_bet: payload.is_risk_free_bet || false,
-                outcomes: [{
-                    criterion_name: leg.market_type || 'Undefined',
-                    outcome_label: leg.selection_name || 'Undefined',
-                }],
-            }));
+            // origin must always be a non-empty string per FT spec
+            // (identifies the brand/jurisdiction in the FT system)
+            const safeOrigin = origin || DEFAULT_PLATFORM_ORIGIN || 'igaming-gateway';
+
+            // Build bets[] array per FT /v1/integration/sports schema
+            // Each leg stored in mock-provider has: event_home, event_away, market_type,
+            // selection_name, odds_at_placement, league_name, sport_name, event_start_ts, is_live
+            const legs = payload.legs || [];
+            const bets = legs.map(leg => {
+                const eventHome = leg.event_home || leg.home_team || '';
+                const eventAway = leg.event_away || leg.away_team || '';
+                const eventName = (eventHome && eventAway)
+                    ? `${eventHome} vs ${eventAway}`
+                    : leg.event_name || 'Unknown Match';
+
+                return {
+                    event_name:       eventName,
+                    tournament_name:  leg.league_name || leg.tournament_name || 'Undefined',
+                    sports_name:      leg.sport_name  || leg.sports_name    || 'Undefined',
+                    match_start:      leg.event_start_ts || leg.match_start || timestamp,
+                    market:           leg.market_type || leg.market || 'Undefined',
+                    odds:             parseFloat(leg.odds_at_placement || leg.odds || 1.0),
+                    is_live:          leg.is_live || false,
+                    is_free_bet:      payload.is_free_bet || false,
+                    is_risk_free_bet: payload.is_risk_free_bet || false,
+                    outcomes: [{
+                        criterion_name: leg.market_type || leg.market || 'Undefined',
+                        outcome_label:  leg.selection_name || leg.outcome_label || 'Undefined',
+                        meta:           leg.meta || {},
+                    }],
+                };
+            });
 
             requestBody = {
-                activity_id: payload.activity_id,
-                activity_id_reference: payload.activity_id_reference || payload.activity_id,
-                user_id: userId,
-                type: payload.type || 'Bet',           // ENUM: Bet, Settlement
-                status: payload.status || 'Approved',  // ENUM: Approved, Rollback
-                bet_type: ftBetType,                   // ENUM: Single, Multi, System
+                activity_id:           payload.activity_id || `sb-${Date.now()}`,
+                activity_id_reference: payload.activity_id_reference || payload.activity_id || `sb-${Date.now()}`,
+                user_id:               userId,
+                type:                  payload.type   || 'Bet',      // ENUM: Bet, Settlement
+                status:                payload.status || 'Approved', // ENUM: Approved, Rollback
+                bet_type:              ftBetType,                     // ENUM: Single, Multi, System
                 timestamp,
-                amount: parseFloat(payload.amount || payload.stake || 0),
-                wager_amount: parseFloat(payload.wager_amount || payload.stake || 0),
-                bonus_wager_amount: parseFloat(payload.bonus_wager_amount || 0),
-                locked_wager_amount: parseFloat(payload.locked_wager_amount || 0),
-                odds: parseFloat(payload.combined_odds || payload.odds || 1.0),
-                currency: payload.currency || 'EUR',
-                exchange_rate: parseFloat(payload.exchange_rate || 1.0),
-                origin,
-                is_cashout: payload.is_cashout || false,
+                amount:                parseFloat(payload.amount      || payload.stake || 0),
+                wager_amount:          parseFloat(payload.wager_amount || payload.stake || 0),
+                bonus_wager_amount:    parseFloat(payload.bonus_wager_amount  || 0),
+                locked_wager_amount:   parseFloat(payload.locked_wager_amount || 0),
+                odds:                  parseFloat(payload.combined_odds || payload.odds || 1.0),
+                currency:              payload.currency || 'EUR',
+                exchange_rate:         parseFloat(payload.exchange_rate || 1.0),
+                origin:                safeOrigin,
+                is_cashout:            payload.is_cashout || false,
                 bets,
                 ...(payload.settlement_type && { settlement_type: payload.settlement_type }),
                 ...(payload.balance_before !== undefined && { balance_before: parseFloat(payload.balance_before) }),
-                ...(payload.balance_after !== undefined && { balance_after: parseFloat(payload.balance_after) }),
-                ...(payload.user_bonus_id && { user_bonus_id: payload.user_bonus_id }),
-                // Settlement-only reference fields
+                ...(payload.balance_after  !== undefined && { balance_after:  parseFloat(payload.balance_after)  }),
+                ...(payload.user_bonus_id  && { user_bonus_id: payload.user_bonus_id }),
+                // Settlement-only reference fields (required by FT when type === 'Settlement')
                 ...(payload.type === 'Settlement' && {
-                    reference_bet_amount: parseFloat(payload.reference_bet_amount || payload.stake || 0),
-                    reference_bet_real_amount: parseFloat(payload.reference_bet_real_amount || payload.stake || 0),
-                    reference_bet_bonus_amount: parseFloat(payload.reference_bet_bonus_amount || 0),
-                    reference_bet_locked_amount: parseFloat(payload.reference_bet_locked_amount || 0),
-                    reference_bet_exchange_rate: parseFloat(payload.reference_bet_exchange_rate || 1.0),
+                    reference_bet_amount:         parseFloat(payload.reference_bet_amount         || payload.stake || 0),
+                    reference_bet_real_amount:    parseFloat(payload.reference_bet_real_amount    || payload.stake || 0),
+                    reference_bet_bonus_amount:   parseFloat(payload.reference_bet_bonus_amount   || 0),
+                    reference_bet_locked_amount:  parseFloat(payload.reference_bet_locked_amount  || 0),
+                    reference_bet_exchange_rate:  parseFloat(payload.reference_bet_exchange_rate  || 1.0),
                 }),
             };
+
+            // Warn if bets array is unexpectedly empty
+            if (bets.length === 0) {
+                logger.warn('[FT Integration] Sportsbook event has empty bets array — legs may be missing', { userId, correlationId, payloadLegsCount: legs.length });
+            }
         }
 
         logger.info(`[FT Integration] Preparing to queue ${eventType} event to RabbitMQ`, { userId, correlationId });

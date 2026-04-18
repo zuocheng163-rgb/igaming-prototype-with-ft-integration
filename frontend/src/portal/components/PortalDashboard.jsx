@@ -165,9 +165,12 @@ const PortalDashboard = ({ user, token, productOffering, onLogout }) => {
                                     });
                                 } else if (kpi.label === 'Total GGR') {
                                     handleNavigate('/portal/wallet', () => {
+                                        // GGR = debits − credits from audit logs; no single "GGR" transaction type.
+                                        // Navigate with date + status filters so all real transactions for that
+                                        // period are shown; the net of debits−credits equals the dashboard GGR.
                                         sessionStorage.setItem('transactionFilters', JSON.stringify({
-                                            type: 'GGR',
-                                            status: 'success',
+                                            type: '',
+                                            status: 'Success',
                                             date: getDateFilterValue(dateRange)
                                         }));
                                     });
