@@ -25,7 +25,7 @@ function Login({ onLogin }) {
         setError('');
         try {
             const data = await login(username, token);
-            onLogin(token, data);
+            onLogin(data.token || data.sid || token, data);
         } catch (err) {
             setError('Invalid credentials. Please check your username and token.');
         } finally {

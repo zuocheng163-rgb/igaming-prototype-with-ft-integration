@@ -36,7 +36,7 @@ function App() {
           // We dynamic import api to avoid circular dependencies if any, or just use imported
           // Importing getBalance from services/api is safe
           import('./player/services/api').then(({ getBalance }) => {
-            getBalance(savedToken).catch(() => {
+            getBalance(savedToken, userData.username).catch(() => {
               console.warn('[NeoStrike] Invalid token detected, logging out...');
               localStorage.removeItem('ns_portal_token');
               localStorage.removeItem('ns_portal_user');

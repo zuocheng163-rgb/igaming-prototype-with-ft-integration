@@ -904,7 +904,9 @@ const getActivePromotions = async (brandId = 1) => {
 };
 
 module.exports = {
+    supabase,
     client: supabase,
+
     getTenantConfig,
     saveAuditLog,
     getUser,

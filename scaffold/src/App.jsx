@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useSession, NeoStrikeProvider } from '@neostrike/sdk';
+import { useSession, useBetSlip, NeoStrikeProvider } from '@neostrike/sdk';
 import { GameLobby } from './components/GameLobby';
 import { WalletDrawer } from './components/WalletDrawer';
 import { Sidebar } from './components/Sidebar';
@@ -12,6 +12,8 @@ import { SportsLobby, LeagueBrowser, EventList, EventPage, BetSlipDrawer, BetHis
 
 function AppInner({ onLoginSuccess, onLogoutSuccess }) {
     const { player, login, isAuthenticated, logout } = useSession();
+    const betSlip = useBetSlip();
+    const { add } = betSlip;
     const [isWalletOpen, setWalletOpen] = useState(false);
     const [isBetSlipOpen, setBetSlipOpen] = useState(false);
     const [activePage, setActivePage] = useState('home');
@@ -84,11 +86,11 @@ function AppInner({ onLoginSuccess, onLogoutSuccess }) {
                     )}
                     {activePage?.startsWith('sport-events-') && (
                         <EventList league={activePage.replace('sport-events-', '')} onNavigate={setActivePage}
-                            onAddToBetSlip={() => setBetSlipOpen(true)} />
+                            onAddToBetSlip={(sel) => { add(sel); setBetSlipOpen(true); }} />
                     )}
                     {activePage?.startsWith('sport-event-') && (
                         <EventPage eventId={parseInt(activePage.replace('sport-event-', ''))} onNavigate={setActivePage}
-                            onAddToBetSlip={() => setBetSlipOpen(true)} />
+                            onAddToBetSlip={(sel) => { add(sel); setBetSlipOpen(true); }} />
                     )}
                     {activePage === 'sport-my-bets' && <BetHistory />}
                     {!activePage?.startsWith('sport') && (
@@ -98,7 +100,7 @@ function AppInner({ onLoginSuccess, onLogoutSuccess }) {
             </div>
 
             <WalletDrawer isOpen={isWalletOpen} onClose={() => setWalletOpen(false)} player={player} />
-            <BetSlipDrawer isOpen={isBetSlipOpen} onClose={() => setBetSlipOpen(false)} onOpenCashier={() => setWalletOpen(true)} />
+            <BetSlipDrawer isOpen={isBetSlipOpen} onClose={() => setBetSlipOpen(false)} onOpenCashier={() => setWalletOpen(true)} player={player} betSlip={betSlip} />
             <AlertModal />
             <SDKConsole />
             <FastTrackFeed />

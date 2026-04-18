@@ -10,15 +10,20 @@ const fetcher = (url, token) => fetch(url, {
     headers: { Authorization: `Bearer ${token}` }
 }).then(res => res.json());
 
-const NotificationCenter = ({ token }) => {
+const NotificationCenter = ({ token, username }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [activeFilter, setActiveFilter] = useState('all');
     const [showPrefs, setShowPrefs] = useState(false);
     const [selectedNotification, setSelectedNotification] = useState(null);
 
     const { data: notifications, mutate } = useSWR(
-        token ? ['/api/operator/notifications', token] : null,
-        ([url, t]) => fetcher(url, t),
+        token ? ['/api/operator/notifications', token, username] : null,
+        ([url, t, u]) => fetch(url, {
+            headers: { 
+                Authorization: `Bearer ${t}`,
+                ...(u && { 'x-username': u })
+            }
+        }).then(res => res.json()),
         { refreshInterval: 30000 }
     );
 
@@ -39,7 +44,9 @@ const NotificationCenter = ({ token }) => {
         return list;
     }, [notifications, activeFilter]);
 
-    const unreadCount = notifications?.filter(n => n.status === 'unread').length || 0;
+    const unreadCount = Array.isArray(notifications) 
+        ? notifications.filter(n => n.status === 'unread').length 
+        : 0;
 
     const getIcon = (type, severity) => {
         if (severity === 'Critical') return <AlertTriangle className="text-red-500" size={16} />;

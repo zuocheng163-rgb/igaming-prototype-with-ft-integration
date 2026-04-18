@@ -72,19 +72,19 @@ router.post('/authenticate', async (req, res) => {
             return res.status(401).json({ error: 'Unauthorized: Invalid API Token or Username' });
         }
 
+        const brandId = user.brand_id || 1;
+        const sessionId = `sid-${user.id}-${Date.now()}`;
+
         // Update Last Login & Token (Graceful degradation)
         try {
-            const updates = { last_login: new Date().toISOString() };
-            if (sessionToken && user.token !== sessionToken) {
-                updates.token = sessionToken;
-            }
+            const updates = { 
+                last_login: new Date().toISOString(),
+                token: sessionId // Save the session ID as the current token
+            };
             await supabaseService.updateUser(user.id, updates);
         } catch (e) {
             logger.warn(`Failed to update user session data for ${user.id}`, { error: e.message });
         }
-
-        const brandId = user.brand_id || 1;
-        const sessionId = `sid-${user.id}-${Date.now()}`;
 
         await ftService.pushEvent(user.user_id, 'login', {
             session_id: sessionId,

@@ -113,7 +113,7 @@ const OperatorLayout = ({ children, user, token, onLogout, dateRange, setDateRan
                         )}
                     </div>
 
-                    <NotificationCenter token={token} />
+                    <NotificationCenter token={token} username={user?.username} />
 
                     <div className="user-profile" onClick={onLogout}>
                         <div className="user-info">

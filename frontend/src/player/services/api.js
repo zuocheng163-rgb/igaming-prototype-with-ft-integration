@@ -18,12 +18,10 @@ export const register = async (userData) => {
     return response.data;
 };
 
-export const getBalance = async (token) => {
-    const response = await axios.get(`${API_URL}/balance`, {
-        headers: {
-            Authorization: `Bearer ${token}`
-        }
-    });
+export const getBalance = async (token, username) => {
+    const headers = { Authorization: `Bearer ${token}` };
+    if (username) headers['x-username'] = username;
+    const response = await axios.get(`${API_URL}/balance`, { headers });
     return response.data;
 };
 

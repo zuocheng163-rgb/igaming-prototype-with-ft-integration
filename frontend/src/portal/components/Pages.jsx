@@ -301,7 +301,8 @@ export const Wallet = ({ user, token }) => {
         user: '',
         type: '',
         amount: '',
-        date: ''
+        date: '',
+        status: ''
     });
 
     const fetchData = (page = 1, appliedFilters = {}) => {

@@ -55,8 +55,13 @@ const getDateFilterValue = (period) => {
 const PortalDashboard = ({ user, token, productOffering, onLogout }) => {
     const [dateRange, setDateRange] = useState('Last 30 Days');
     const { data: stats, mutate } = useSWR(
-        token ? [`/api/operator/stats?period=${dateRange}`, token] : null,
-        ([url, t]) => fetcher(url, t),
+        token ? [`/api/operator/stats?period=${dateRange}`, token, user?.username] : null,
+        ([url, t, u]) => fetch(url, {
+            headers: { 
+                Authorization: `Bearer ${t}`,
+                ...(u && { 'x-username': u })
+            }
+        }).then(res => res.json()),
         { refreshInterval: 60000 }
     );
 

@@ -277,7 +277,7 @@ export const useBetSlip = (config = {}) => {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Bet placement failed');
-            setPlacedBet(data);
+            setPlacedBet({ ...data, stake: parseFloat(stake) });
             setState(STATES.PLACED);
             setLegs([]);
             setStake('');
