@@ -451,6 +451,96 @@ router.get('/operator/exports/:jobId', authenticateRequest, async (req, res) => 
   }
 });
 
+// GET /api/operator/exports/:jobId/download - stream CSV for a completed export job
+router.get('/operator/exports/:jobId/download', authenticateRequest, async (req, res) => {
+  const { jobId } = req.params;
+  const brandId = req.brandId || req.user?.brand_id || 1;
+  try {
+    const { data: job, error } = await supabaseService.supabase
+      .from('export_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .eq('brand_id', brandId)
+      .single();
+
+    if (error || !job) {
+      return res.status(404).json({ error: 'Export job not found' });
+    }
+
+    const reportType = job.report_type || 'player_list';
+    const csv = generateMockCsv(reportType);
+    const filename = `${reportType}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.status(200).send(csv);
+  } catch (err) {
+    logger.error('[Phase1] GET /operator/exports/:jobId/download failed', { error: err.message, jobId });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Generate a mock CSV file for a given report type.
+ * Includes Excel BOM so the file opens cleanly in Excel.
+ */
+function generateMockCsv(reportType) {
+  const BOM = '\uFEFF';
+  const today = new Date().toISOString().slice(0, 10);
+
+  const templates = {
+    ggr_by_day: [
+      ['Date', 'Sport/Game', 'Bets', 'Wager Amount (EUR)', 'Payout (EUR)', 'GGR (EUR)', 'Margin %'],
+      [today, 'Slots', '1420', '28400.00', '26548.00', '1852.00', '6.52'],
+      [today, 'Live Casino', '380', '19000.00', '17860.00', '1140.00', '6.00'],
+      [today, 'Sports', '210', '10500.00', '9765.00', '735.00', '7.00'],
+      [today, 'Table Games', '95', '4750.00', '4417.50', '332.50', '7.00'],
+    ],
+    top_players: [
+      ['Player ID', 'Username', 'Country', 'Deposits (EUR)', 'Withdrawals (EUR)', 'GGR (EUR)', 'Sessions', 'Last Active'],
+      ['PLR001', 'highroller88', 'DE', '15000.00', '12000.00', '3200.00', '42', today],
+      ['PLR002', 'lucky_spin', 'AT', '8500.00', '7200.00', '1450.00', '28', today],
+      ['PLR003', 'test03', 'GB', '5200.00', '4100.00', '980.00', '17', today],
+      ['PLR004', 'casinoking', 'FI', '12000.00', '9800.00', '2650.00', '35', today],
+      ['PLR005', 'nightowl99', 'SE', '3400.00', '3100.00', '420.00', '12', today],
+    ],
+    bonus_exposure: [
+      ['Bonus Code', 'Type', 'Issued', 'Claimed', 'Active', 'Expired', 'Total Exposure (EUR)', 'Avg Wager (EUR)'],
+      ['WELCOME100', 'WelcomeBonus', '520', '438', '102', '316', '43800.00', '100.00'],
+      ['RELOAD50', 'ReloadBonus', '210', '187', '45', '142', '9350.00', '50.00'],
+      ['FREE20', 'NoDeposit', '1200', '930', '88', '842', '18600.00', '20.00'],
+      ['SPORTS10', 'RiskFreeBet', '340', '295', '60', '235', '2950.00', '10.00'],
+    ],
+    kyc_queue: [
+      ['Player ID', 'Username', 'Country', 'Document Type', 'Submitted', 'Status', 'Risk Level', 'Assigned To'],
+      ['PLR101', 'newplayer01', 'DE', 'Passport', today, 'pending', 'low', 'compliance_agent'],
+      ['PLR102', 'highbet22', 'RU', 'National ID', today, 'review', 'high', 'senior_compliance'],
+      ['PLR103', 'quickdep', 'NG', 'Utility Bill', today, 'pending', 'medium', 'compliance_agent'],
+      ['PLR104', 'eurobet55', 'PL', 'Passport', today, 'approved', 'low', ''],
+      ['PLR105', 'test03', 'GB', 'Driving Licence', today, 'review', 'medium', 'compliance_agent'],
+    ],
+    player_list: [
+      ['Player ID', 'Username', 'Email', 'Country', 'Status', 'Balance (EUR)', 'Registered', 'Last Login'],
+      ['PLR001', 'highroller88', 'h88@example.com', 'DE', 'active', '2340.00', '2024-01-15', today],
+      ['PLR002', 'lucky_spin', 'ls@example.com', 'AT', 'active', '780.50', '2024-02-20', today],
+      ['PLR003', 'test03', 'test03@example.com', 'GB', 'active', '125.00', '2024-03-01', today],
+      ['PLR004', 'casinoking', 'ck@example.com', 'FI', 'suspended', '0.00', '2023-12-10', '2025-12-01'],
+      ['PLR005', 'nightowl99', 'no99@example.com', 'SE', 'active', '455.25', '2024-04-05', today],
+    ],
+    transaction_log: [
+      ['Transaction ID', 'Player ID', 'Type', 'Amount (EUR)', 'Status', 'Method', 'Timestamp', 'Reference'],
+      [`TXN-${Date.now()-5}`, 'PLR001', 'Deposit', '500.00', 'Approved', 'Credit Card', today, 'REF-001'],
+      [`TXN-${Date.now()-4}`, 'PLR002', 'Withdrawal', '200.00', 'Approved', 'Bank Transfer', today, 'REF-002'],
+      [`TXN-${Date.now()-3}`, 'PLR003', 'Deposit', '100.00', 'Approved', 'E-Wallet', today, 'REF-003'],
+      [`TXN-${Date.now()-2}`, 'PLR001', 'Withdrawal', '750.00', 'Pending', 'Bank Transfer', today, 'REF-004'],
+      [`TXN-${Date.now()-1}`, 'PLR004', 'Deposit', '1000.00', 'Rejected', 'Credit Card', today, 'REF-005'],
+    ],
+  };
+
+  const rows = templates[reportType] || templates['player_list'];
+  return BOM + rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+}
+
 // ============================================================
 // F14-05: Country Rules
 // ============================================================

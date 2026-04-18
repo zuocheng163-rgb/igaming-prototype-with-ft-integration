@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Award } from 'lucide-react';
+import { Award, Zap } from 'lucide-react';
 
 const PATTERN_COLORS = { 'Clear & Withdraw': '#ff4444', 'Low-contrib farming': '#ff8800', 'Multi-account': '#9b59b6' };
 
@@ -30,6 +30,7 @@ export const BonusAbusePanel = ({ token, user }) => {
     const [data, setData] = useState({ burn_rate: [], patterns: [], top_campaigns: [] });
     const [loading, setLoading] = useState(true);
     const [toasts, setToasts] = useState([]);
+    const [simulating, setSimulating] = useState(false);
 
     const addToast = (message, type = 'success') => {
         const id = Date.now();
@@ -47,6 +48,25 @@ export const BonusAbusePanel = ({ token, user }) => {
     }, [token]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    const handleSimulate = async () => {
+        setSimulating(true);
+        try {
+            const res = await fetch('/api/operator/fraud/simulate', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ player_id: 'test03' }),
+            });
+            if (!res.ok) throw new Error('Simulation failed');
+            const d = await res.json();
+            addToast(`Simulated ${d.inserted} bonus abuse signal(s) for test03`);
+            await fetchData();
+        } catch (e) {
+            addToast(e.message, 'error');
+        } finally {
+            setSimulating(false);
+        }
+    };
 
     const handleAction = async (playerId, action) => {
         try {
@@ -68,7 +88,17 @@ export const BonusAbusePanel = ({ token, user }) => {
     return (
         <div style={{ padding: '24px' }}>
             <Toast toasts={toasts} />
-            <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: '700', marginBottom: '20px' }}>Bonus Abuse & Burn-Rate</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: '700', margin: 0 }}>Bonus Abuse & Burn-Rate</h2>
+                <button
+                    onClick={handleSimulate}
+                    disabled={simulating}
+                    style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', background: 'rgba(255,136,0,0.12)', border: '1px solid rgba(255,136,0,0.3)', borderRadius: '7px', color: '#ff8800', cursor: simulating ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: '600', opacity: simulating ? 0.6 : 1 }}
+                >
+                    <Zap size={14} />
+                    {simulating ? 'Simulating…' : 'Simulate Abuse (test03)'}
+                </button>
+            </div>
 
             {/* Burn rate chart */}
             <div className="glass-panel" style={{ padding: '20px', borderRadius: '10px', marginBottom: '24px' }}>

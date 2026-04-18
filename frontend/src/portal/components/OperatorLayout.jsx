@@ -59,6 +59,7 @@ const OperatorLayout = ({ children, user, token, onLogout, dateRange, setDateRan
         { icon: Network, label: 'Fraud Feed', id: 'fraud-feed', path: '/portal/fraud/feed' },
         { icon: ShieldAlert, label: 'ATO Alerts', id: 'ato', path: '/portal/fraud/ato' },
         { icon: Award, label: 'Bonus Abuse', id: 'bonus-abuse', path: '/portal/fraud/bonus-abuse' },
+        { icon: Activity, label: 'AFA Monitor', id: 'afa', path: '/portal/afa' },
         { icon: Activity, label: 'Operational Stream', id: 'operational-stream' },
         { icon: Activity, label: 'AFA Monitor', id: 'afa' },
         { icon: Settings, label: 'Settings', id: 'settings' },

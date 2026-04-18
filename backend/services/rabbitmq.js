@@ -75,6 +75,22 @@ class RabbitMQService {
             
             if (published) {
                 logger.debug(`[RabbitMQ] Published to ${targetRoutingKey}`, { type: properties.type });
+
+                const eventType = type || (properties.type) || targetRoutingKey;
+                const brandId = (payload && (payload.brand_id || payload.brandId)) || 1;
+
+                // Operator Monitor: fan out to in-process SSE bus for the AFA Real-time Monitor page
+                try {
+                    const operatorEvents = require('./operator-events');
+                    operatorEvents.emit(`brand:${brandId}`, {
+                        event_type: eventType,
+                        data: payload,
+                        brand_id: brandId,
+                        occurred_at: new Date().toISOString(),
+                    });
+                } catch (busErr) {
+                    logger.debug('[OperatorEvents] Bus emit failed', { error: busErr.message });
+                }
             }
 
             // Close gracefully

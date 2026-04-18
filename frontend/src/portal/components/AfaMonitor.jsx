@@ -1,209 +1,182 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Activity, ShieldAlert, TrendingUp, AlertCircle, CheckCircle, RefreshCw, Zap } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Activity, Wifi, WifiOff, Trash2, Zap } from 'lucide-react';
 
-const AfaMonitor = ({ token }) => {
+const EVENT_COLORS = {
+    sportsbook:        '#00ccff',
+    casino:            '#ffd700',
+    payment:           '#00ff88',
+    login:             '#9b59b6',
+    registration:      '#3498db',
+    logout:            '#95a5a6',
+    fraud_signal_ato:       '#ff4444',
+    fraud_signal_bonus_abuse: '#ff8800',
+    rg_alert_created:  '#ff4444',
+    rg_alert_escalated: '#ff6600',
+    default:           '#aaa',
+};
+
+const getColor = (eventType) =>
+    EVENT_COLORS[eventType] || EVENT_COLORS.default;
+
+const EventRow = ({ event }) => {
+    const color = getColor(event.event_type);
+    return (
+        <div style={{
+            display: 'flex', gap: '12px', alignItems: 'flex-start',
+            padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)',
+            animation: 'fadeInDown 0.3s ease',
+        }}>
+            <div style={{ marginTop: '3px', width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 6px ${color}` }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ color, fontWeight: '600', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                        {event.event_type}
+                    </span>
+                    {event.brand_id && (
+                        <span style={{ color: '#555', fontSize: '11px' }}>brand:{event.brand_id}</span>
+                    )}
+                    <span style={{ color: '#444', fontSize: '11px', marginLeft: 'auto' }}>
+                        {event.occurred_at ? new Date(event.occurred_at).toLocaleTimeString() : ''}
+                    </span>
+                </div>
+                {event.data && (
+                    <pre style={{ color: '#777', fontSize: '11px', margin: '4px 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: '1.5' }}>
+                        {JSON.stringify(event.data, null, 2).slice(0, 400)}
+                    </pre>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export const AfaMonitor = ({ token }) => {
     const [events, setEvents] = useState([]);
-    const [status, setStatus] = useState('connecting');
-    const [heartbeatCount, setHeartbeatCount] = useState(0);
-    const [lastHeartbeat, setLastHeartbeat] = useState(null);
-    const [error, setError] = useState(null);
-    const eventSourceRef = useRef(null);
+    const [status, setStatus] = useState('connecting'); // connecting | connected | disconnected
+    const [heartbeats, setHeartbeats] = useState(0);
+    const esRef = useRef(null);
+    const retryRef = useRef(null);
 
-    useEffect(() => {
-        if (!token) return;
+    const connect = useCallback(() => {
+        if (esRef.current) {
+            esRef.current.close();
+            esRef.current = null;
+        }
+        if (retryRef.current) {
+            clearTimeout(retryRef.current);
+            retryRef.current = null;
+        }
 
-        const connectStream = () => {
-            // AFA SSE stream requires the agent JWT
-            // In a real environment, we'd pass it in headers, but SSE standard doesn't support headers via EventSource.
-            // AFA implementation in backend supports ?token= query param for SSE auth.
-            const url = `${window.location.origin}/api/v1/ops/events/stream?token=${token}`;
-            
-            setStatus('connecting');
-            const es = new EventSource(url);
-            eventSourceRef.current = es;
+        setStatus('connecting');
 
-            es.onopen = () => {
-                setStatus('connected');
-                setError(null);
-            };
+        // EventSource cannot set custom headers, so we pass the JWT as a query param.
+        // The backend authenticateRequest middleware reads req.query.token as a fallback.
+        const url = `/api/operator/events/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+        const es = new EventSource(url);
+        esRef.current = es;
 
-            es.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    // Heartbeat / connection lifecycle -- don't add to timeline
-                    if (data.type === 'heartbeat' || data.type === 'connected' || data.event_type === 'heartbeat') {
-                        if (data.type === 'heartbeat') {
-                            setHeartbeatCount(prev => prev + 1);
-                            setLastHeartbeat(new Date().toISOString());
-                        }
-                        return;
-                    }
-
-                    // Bump heartbeat counter for any non-connection message (shows stream is alive)
-                    setHeartbeatCount(prev => prev + 1);
-                    setLastHeartbeat(new Date().toISOString());
-
-                    // Real platform event — add to timeline
-                    setEvents(prev => [{
-                        id: data.event_id || Date.now(),
-                        type: data.event_type || data.type || 'event',
-                        payload: data.data || data,
-                        localTime: new Date().toLocaleTimeString(),
-                        brand_id: data.brand_id,
-                    }, ...prev].slice(0, 100));
-                } catch (e) {
-                    console.error('[AFA Monitor] Failed to parse event', e);
-                }
-            };
-
-            es.onerror = (e) => {
-                console.error('[AFA Monitor] SSE Error', e);
-                setStatus('disconnected');
-                setError('Connection lost. Retrying...');
-                es.close();
-                // Auto-retry in 5s
-                setTimeout(connectStream, 5000);
-            };
+        es.onopen = () => {
+            setStatus('connected');
         };
 
-        connectStream();
+        es.onmessage = (e) => {
+            try {
+                const parsed = JSON.parse(e.data);
+                if (parsed.type === 'connected') {
+                    setStatus('connected');
+                    return;
+                }
+                // Heartbeats are SSE comments (": heartbeat") — they don't fire onmessage
+                setEvents(prev => [parsed, ...prev].slice(0, 200));
+            } catch (_) {}
+        };
 
-        return () => {
-            if (eventSourceRef.current) {
-                eventSourceRef.current.close();
-            }
+        es.onerror = () => {
+            es.close();
+            esRef.current = null;
+            setStatus('disconnected');
+            retryRef.current = setTimeout(() => connect(), 5000);
         };
     }, [token]);
 
-    const getEventColor = (type) => {
-        if (type?.includes('error') || type?.includes('flag')) return '#ff4d4d';
-        if (type?.includes('alert')) return '#ffa500';
-        if (type?.includes('balance')) return '#00ff88';
-        if (type?.includes('bonus')) return '#7928ca';
-        return 'var(--accent-gold)';
-    };
+    useEffect(() => {
+        connect();
+        return () => {
+            if (esRef.current) esRef.current.close();
+            if (retryRef.current) clearTimeout(retryRef.current);
+        };
+    }, [connect]);
+
+    // Increment heartbeat counter every 25s while connected (mirrors backend ping interval)
+    useEffect(() => {
+        if (status !== 'connected') return;
+        const interval = setInterval(() => setHeartbeats(h => h + 1), 25000);
+        return () => clearInterval(interval);
+    }, [status]);
 
     return (
-        <div className="page-container" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div className={`status-orb ${status === 'connected' ? 'pulsing' : 'offline'}`} 
-                         style={{ 
-                             width: '12px', 
-                             height: '12px', 
-                             borderRadius: '50%',
-                             backgroundColor: status === 'connected' ? '#00ff88' : '#ff4d4d',
-                             boxShadow: status === 'connected' ? '0 0 10px #00ff88' : 'none'
-                         }}></div>
-                    <h2 style={{ margin: 0 }}>AFA Real-time Monitor</h2>
-                </div>
-                
-                <div style={{ display: 'flex', gap: '20px' }}>
-                    <div className="glass-panel" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <Activity size={16} color="var(--accent-gold)" />
-                        <div style={{ fontSize: '0.85rem' }}>
-                            <span style={{ opacity: 0.6 }}>Heartbeats: </span>
-                            <span style={{ color: 'var(--accent-gold)', fontWeight: 700 }}>{heartbeatCount}</span>
-                        </div>
+        <div style={{ padding: '24px' }}>
+            <style>{`@keyframes fadeInDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }`}</style>
+
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Activity size={20} color="#00ccff" />
+                    AFA Real-time Monitor
+                </h2>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: status === 'connected' ? '#00ff88' : status === 'connecting' ? '#ffd700' : '#ff4444' }}>
+                        {status === 'connected' ? <Wifi size={14} /> : <WifiOff size={14} />}
+                        {status === 'connected' ? 'Live' : status === 'connecting' ? 'Connecting…' : 'Disconnected — retrying in 5s'}
                     </div>
-                    {lastHeartbeat && (
-                        <div className="glass-panel" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Zap size={16} color="#00ff88" />
-                            <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
-                                Last Signal: {new Date(lastHeartbeat).toLocaleTimeString()}
-                            </div>
-                        </div>
-                    )}
+                    <div style={{ fontSize: '12px', color: '#555' }}>
+                        Heartbeats: {heartbeats}
+                    </div>
+                    <button
+                        onClick={() => setEvents([])}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '12px' }}
+                    >
+                        <Trash2 size={12} /> Clear
+                    </button>
+                    <button
+                        onClick={connect}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'rgba(0,204,255,0.1)', border: '1px solid rgba(0,204,255,0.25)', borderRadius: '6px', color: '#00ccff', cursor: 'pointer', fontSize: '12px' }}
+                    >
+                        <Zap size={12} /> Reconnect
+                    </button>
                 </div>
             </div>
 
-            {error && (
-                <div className="error-banner" style={{ marginBottom: '20px', background: 'rgba(255, 77, 77, 0.1)', color: '#ff4d4d', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255, 77, 77, 0.2)' }}>
-                    {error}
-                </div>
-            )}
+            {/* Legend */}
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                {Object.entries(EVENT_COLORS).filter(([k]) => k !== 'default').map(([type, color]) => (
+                    <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#666' }}>
+                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: color }} />
+                        {type}
+                    </div>
+                ))}
+            </div>
 
-            <div className="events-timeline" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Event Feed */}
+            <div className="glass-panel" style={{ borderRadius: '10px', overflow: 'hidden', minHeight: '300px' }}>
                 {events.length === 0 ? (
-                    <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', opacity: 0.5 }}>
-                        <Activity size={48} style={{ marginBottom: '16px', margin: '0 auto' }} />
-                        <p>Waiting for events from the NeoStrike platform...</p>
-                        <p style={{ fontSize: '0.8rem' }}>Trigger a login, deposit, or bet to see AFA capturing it in real-time.</p>
+                    <div style={{ textAlign: 'center', color: '#555', padding: '60px 20px' }}>
+                        <Activity size={32} style={{ marginBottom: '12px', opacity: 0.3 }} />
+                        <div style={{ fontSize: '14px' }}>
+                            {status === 'connected' ? 'Listening for events… Place a bet, make a deposit, or trigger a simulation.' : 'Waiting for connection…'}
+                        </div>
                     </div>
                 ) : (
-                    events.map(event => (
-                        <div key={event.id} className="event-card glass-panel" style={{ 
-                            padding: '16px', 
-                            display: 'grid', 
-                            gridTemplateColumns: 'auto 1fr auto',
-                            gap: '20px',
-                            borderLeft: `4px solid ${getEventColor(event.type)}`,
-                            animation: 'slideIn 0.3s ease-out'
-                        }}>
-                            <div style={{ color: getEventColor(event.type), display: 'flex', alignItems: 'center' }}>
-                                <ShieldAlert size={20} />
-                            </div>
-                            <div>
-                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '4px' }}>
-                                    <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'white', textTransform: 'uppercase' }}>
-                                        {event.type}
-                                    </span>
-                                    {event.payload?.type && (
-                                        <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px', color: 'var(--accent-gold)' }}>
-                                            {event.payload.type}
-                                        </span>
-                                    )}
-                                    {event.brand_id && (
-                                        <span style={{ fontSize: '0.7rem', background: 'rgba(255,255,255,0.07)', padding: '2px 6px', borderRadius: '4px', opacity: 0.5 }}>
-                                            Brand {event.brand_id}
-                                        </span>
-                                    )}
-                                </div>
-                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                    {event.payload?.message || event.payload?.player_id ? (
-                                        <span>
-                                            {event.payload.message}
-                                            {event.payload.player_id && <span style={{ opacity: 0.6, marginLeft: '8px' }}>Player: {event.payload.player_id}</span>}
-                                        </span>
-                                    ) : JSON.stringify(event.payload || {}).slice(0, 120)}
-                                </div>
-                                {event.payload?.amount !== undefined && (
-                                    <div style={{ marginTop: '4px', fontSize: '0.8rem', color: '#00ff88', fontWeight: 600 }}>
-                                        {event.payload.currency || 'EUR'} {parseFloat(event.payload.amount).toFixed(2)}
-                                        {event.payload.balance_after !== undefined && (
-                                            <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '8px' }}>
-                                                → Balance: {parseFloat(event.payload.balance_after).toFixed(2)}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                            <div style={{ textAlign: 'right', fontSize: '0.8rem', opacity: 0.6, whiteSpace: 'nowrap' }}>
-                                <div>{event.localTime}</div>
-                            </div>
+                    <div>
+                        <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#555' }}>
+                            <span>EVENT TYPE</span>
+                            <span>{events.length} events</span>
                         </div>
-                    ))
+                        {events.map((ev, i) => (
+                            <EventRow key={i} event={ev} />
+                        ))}
+                    </div>
                 )}
             </div>
-            
-            <style dangerouslySetInnerHTML={{ __html: `
-                .pulsing {
-                    animation: pulse 2s infinite;
-                }
-                @keyframes pulse {
-                    0% { transform: scale(1); opacity: 1; }
-                    50% { transform: scale(1.2); opacity: 0.6; }
-                    100% { transform: scale(1); opacity: 1; }
-                }
-                @keyframes slideIn {
-                    from { opacity: 0; transform: translateY(-10px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                .status-orb.offline {
-                    opacity: 0.5;
-                }
-            `}} />
         </div>
     );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ShieldAlert, Smartphone, MapPin, Key, CreditCard } from 'lucide-react';
+import { ShieldAlert, Smartphone, MapPin, Key, CreditCard, Zap } from 'lucide-react';
 
 const KPI = ({ label, value, color }) => (
     <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '16px 20px', flex: 1 }}>
@@ -23,6 +23,7 @@ export const ATODashboard = ({ token, user }) => {
     const [loading, setLoading] = useState(true);
     const [selectedAlert, setSelectedAlert] = useState(null);
     const [toasts, setToasts] = useState([]);
+    const [simulating, setSimulating] = useState(false);
 
     const addToast = (message, type = 'success') => {
         const id = Date.now();
@@ -40,6 +41,25 @@ export const ATODashboard = ({ token, user }) => {
     }, [token]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    const handleSimulate = async () => {
+        setSimulating(true);
+        try {
+            const res = await fetch('/api/operator/fraud/simulate', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ player_id: 'test03' }),
+            });
+            if (!res.ok) throw new Error('Simulation failed');
+            const d = await res.json();
+            addToast(`Simulated ${d.inserted} ATO signal(s) for test03`);
+            await fetchData();
+        } catch (e) {
+            addToast(e.message, 'error');
+        } finally {
+            setSimulating(false);
+        }
+    };
 
     const handleRemediation = async (alertId, action) => {
         try {
@@ -61,7 +81,17 @@ export const ATODashboard = ({ token, user }) => {
     return (
         <div style={{ padding: '24px' }}>
             <Toast toasts={toasts} />
-            <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: '700', marginBottom: '20px' }}>ATO Alerts Dashboard</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: '700', margin: 0 }}>ATO Alerts Dashboard</h2>
+                <button
+                    onClick={handleSimulate}
+                    disabled={simulating}
+                    style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', background: 'rgba(255,68,68,0.12)', border: '1px solid rgba(255,68,68,0.3)', borderRadius: '7px', color: '#ff4444', cursor: simulating ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: '600', opacity: simulating ? 0.6 : 1 }}
+                >
+                    <Zap size={14} />
+                    {simulating ? 'Simulating…' : 'Simulate ATO (test03)'}
+                </button>
+            </div>
 
             {/* KPI Strip */}
             <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>

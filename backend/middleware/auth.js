@@ -17,8 +17,9 @@ const authenticateRequest = async (req, res, next) => {
     const correlationId = req.correlationId || generateCorrelationId();
     try {
         const apiKey = req.headers['x-api-key'];
-        const authHeader = req.headers['authorization'] || '';
-        
+        // Support ?token= query param for SSE endpoints where EventSource cannot set headers
+        const authHeader = req.headers['authorization'] || (req.query.token ? `Bearer ${req.query.token}` : '');
+
         let sessionToken = authHeader;
         while (sessionToken.toLowerCase().startsWith('bearer ')) {
             sessionToken = sessionToken.substring(7).trim();

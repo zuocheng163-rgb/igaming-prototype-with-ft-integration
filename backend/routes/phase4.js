@@ -403,4 +403,137 @@ router.get('/operator/players/:id/trust-timeline', authenticateRequest, async (r
   }
 });
 
+// ============================================================
+// Operator Event Stream - SSE for AFA Real-time Monitor
+// ============================================================
+
+const operatorEvents = require('../services/operator-events');
+
+// GET /api/operator/events/stream - operator-auth SSE stream (no agent JWT needed)
+router.get('/operator/events/stream', authenticateRequest, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const brandId = req.brandId || req.user?.brand_id || 1;
+
+  // Send initial connected event
+  try { res.write(`data: ${JSON.stringify({ type: 'connected', brand_id: brandId })}\n\n`); } catch (_) {}
+
+  // Heartbeat every 25s to keep connection alive
+  const heartbeat = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch (_) {}
+  }, 25000);
+
+  const handler = (event) => {
+    try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch (_) {}
+  };
+
+  operatorEvents.on(`brand:${brandId}`, handler);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    operatorEvents.off(`brand:${brandId}`, handler);
+  });
+});
+
+// ============================================================
+// Fraud Signal Simulation (dev/demo helper)
+// ============================================================
+
+// POST /api/operator/fraud/simulate - insert sample ATO + bonus_abuse signals
+router.post('/operator/fraud/simulate', authenticateRequest, async (req, res) => {
+  const brandId = req.brandId || req.user?.brand_id || 1;
+  const { player_id = 'test03' } = req.body;
+
+  const now = new Date().toISOString();
+  const signals = [
+    {
+      brand_id: brandId,
+      player_id,
+      category: 'ato',
+      severity: 'high',
+      status: 'open',
+      payload: {
+        reason: 'Multiple failed login attempts followed by successful login from new IP',
+        ip_address: '192.168.99.' + Math.floor(Math.random() * 254 + 1),
+        failed_attempts: 7,
+        new_device: true,
+        country_mismatch: true,
+      },
+      created_at: now,
+    },
+    {
+      brand_id: brandId,
+      player_id,
+      category: 'ato',
+      severity: 'critical',
+      status: 'open',
+      payload: {
+        reason: 'Password reset requested from unrecognised device immediately after account access',
+        ip_address: '10.0.' + Math.floor(Math.random() * 254 + 1) + '.55',
+        device_fingerprint_mismatch: true,
+        session_anomaly: true,
+      },
+      created_at: now,
+    },
+    {
+      brand_id: brandId,
+      player_id,
+      category: 'bonus_abuse',
+      severity: 'high',
+      status: 'open',
+      payload: {
+        reason: 'Wagering pattern consistent with bonus hunting — minimum bets on high-RTP games',
+        bonus_code: 'WELCOME100',
+        wager_velocity: 'low_variance',
+        game_rtp_avg: 0.9875,
+        suspected_multi_account: false,
+      },
+      created_at: now,
+    },
+    {
+      brand_id: brandId,
+      player_id,
+      category: 'bonus_abuse',
+      severity: 'medium',
+      status: 'open',
+      payload: {
+        reason: 'Cashout immediately after bonus wagering requirement met — 3 occurrences',
+        bonus_ids: ['9821', '9834', '9850'],
+        pattern: 'immediate_cashout_post_wager',
+        occurrences: 3,
+      },
+      created_at: now,
+    },
+  ];
+
+  try {
+    const { data, error } = await supabaseService.supabase
+      .from('fraud_signals')
+      .insert(signals)
+      .select();
+
+    if (error) throw error;
+
+    // Emit to operator event bus so AFA Monitor updates in real-time
+    for (const signal of data || []) {
+      operatorEvents.emit(`brand:${brandId}`, {
+        event_type: `fraud_signal_${signal.category}`,
+        data: signal,
+        brand_id: brandId,
+        occurred_at: signal.created_at,
+      });
+    }
+
+    logger.info('[Phase4] Fraud simulation inserted', { player_id, count: (data || []).length });
+    res.status(201).json({ inserted: (data || []).length, signals: data });
+  } catch (err) {
+    logger.error('[Phase4] POST /operator/fraud/simulate failed', { error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
