@@ -105,6 +105,27 @@ export const ExportsPanel = ({ token, user }) => {
         }
     };
 
+    const handleDownload = async (job) => {
+        try {
+            const res = await fetch(`/api/operator/exports/${job.id}/download`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error(`Server returned ${res.status}`);
+            const blob = await res.blob();
+            const ext = job.format === 'pdf' ? 'pdf' : 'csv';
+            const filename = `${job.report_type}_${new Date(job.created_at).toISOString().slice(0, 10)}.${ext}`;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+        } catch (e) {
+            addToast(`Download failed: ${e.message}`, 'error');
+        }
+    };
+
     const handleDeleteSchedule = async (id) => {
         try {
             await fetch(`/api/operator/exports/schedules/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
@@ -224,14 +245,14 @@ export const ExportsPanel = ({ token, user }) => {
                                             {job.status === 'running' && <RefreshCw size={10} style={{ animation: 'spin 1s linear infinite', marginRight: '4px' }} />}
                                             {job.status}
                                         </span>
-                                        {job.status === 'completed' && job.signed_url && (
-                                            <a href={job.signed_url} download style={{
+                                        {job.status === 'completed' && (
+                                            <button onClick={() => handleDownload(job)} style={{
                                                 background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.3)',
                                                 borderRadius: '6px', padding: '5px 12px', color: '#00ff88',
-                                                fontSize: '12px', textDecoration: 'none', fontWeight: '600'
+                                                fontSize: '12px', cursor: 'pointer', fontWeight: '600'
                                             }}>
                                                 Download
-                                            </a>
+                                            </button>
                                         )}
                                     </div>
                                 </div>

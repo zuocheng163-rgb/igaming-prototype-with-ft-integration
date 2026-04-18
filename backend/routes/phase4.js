@@ -17,6 +17,23 @@ const { correlationMiddleware, authenticateRequest } = require('../middleware/au
 router.use(correlationMiddleware);
 
 // ============================================================
+// Mock seed data — returned when fraud_signals table is empty
+// ============================================================
+const now = new Date();
+const h = (hrs) => new Date(now - hrs * 3600000).toISOString();
+
+const MOCK_FRAUD_SIGNALS = [
+  { id: 'mock-1', brand_id: 1, player_id: 'test03', category: 'ato', severity: 'critical', status: 'open', created_at: h(1), updated_at: h(1), payload: { reason: 'Login from new country immediately after password reset', ip_address: '185.234.12.55', country: 'UA', new_device: true, failed_attempts: 9 } },
+  { id: 'mock-2', brand_id: 1, player_id: 'highroller88', category: 'ato', severity: 'high', status: 'open', created_at: h(3), updated_at: h(3), payload: { reason: 'Multiple failed logins followed by access from new IP', ip_address: '92.45.11.200', country: 'RU', new_device: true, failed_attempts: 6 } },
+  { id: 'mock-3', brand_id: 1, player_id: 'lucky_spin', category: 'ato', severity: 'high', status: 'acknowledged', created_at: h(8), updated_at: h(6), payload: { reason: 'Session cookie reuse from different IP block', ip_address: '103.21.55.4', country: 'CN', session_anomaly: true } },
+  { id: 'mock-4', brand_id: 1, player_id: 'test03', category: 'bonus_abuse', severity: 'high', status: 'open', created_at: h(2), updated_at: h(2), payload: { reason: 'Immediate cashout after bonus wagering requirement met', pattern_type: 'Clear & Withdraw', bonus_codes: ['WELCOME100'], claimed_amount: 450, wagered_amount: 1000, withdrawal_attempts: 3 } },
+  { id: 'mock-5', brand_id: 1, player_id: 'casinoking', category: 'bonus_abuse', severity: 'medium', status: 'open', created_at: h(5), updated_at: h(5), payload: { reason: 'Low-RTP game selection to meet wagering with minimal risk', pattern_type: 'Low-contrib farming', bonus_codes: ['RELOAD50'], claimed_amount: 200, wagered_amount: 1200 } },
+  { id: 'mock-6', brand_id: 1, player_id: 'nightowl99', category: 'bonus_abuse', severity: 'medium', status: 'open', created_at: h(10), updated_at: h(10), payload: { reason: 'Suspected multi-account bonus claiming', pattern_type: 'Multi-account', bonus_codes: ['FREE20', 'WELCOME100'], claimed_amount: 160 } },
+  { id: 'mock-7', brand_id: 1, player_id: 'PLR102', category: 'velocity', severity: 'high', status: 'open', created_at: h(4), updated_at: h(4), payload: { reason: '12 deposits in under 2 hours totalling €4,800', deposit_count: 12, total_amount: 4800, window_minutes: 110 } },
+  { id: 'mock-8', brand_id: 1, player_id: 'PLR103', category: 'kyc_anomaly', severity: 'medium', status: 'open', created_at: h(12), updated_at: h(12), payload: { reason: 'Document submitted appears digitally altered', document_type: 'Passport', confidence_score: 0.38 } },
+];
+
+// ============================================================
 // F17-01: Fraud Signals
 // ============================================================
 
@@ -40,15 +57,26 @@ router.get('/operator/fraud/signals', authenticateRequest, async (req, res) => {
     const { data, error } = await query;
     if (error) throw error;
 
+    // Fall back to mock data when table is empty (demo/dev mode)
+    let signals = (data && data.length > 0) ? data : MOCK_FRAUD_SIGNALS;
+
+    // Apply in-memory filters on mock data
+    if (data && data.length === 0) {
+      if (status) signals = signals.filter(s => s.status === status);
+      if (category) signals = signals.filter(s => s.category === category);
+      if (severity) signals = signals.filter(s => s.severity === severity);
+      if (player_id) signals = signals.filter(s => s.player_id === player_id);
+    }
+
     // KPI strip aggregation
     const kpi = {
-      total: data?.length || 0,
-      open: (data || []).filter(s => s.status === 'open').length,
-      critical: (data || []).filter(s => s.severity === 'critical').length,
-      high: (data || []).filter(s => s.severity === 'high').length
+      total: signals.length,
+      open: signals.filter(s => s.status === 'open').length,
+      critical: signals.filter(s => s.severity === 'critical').length,
+      high: signals.filter(s => s.severity === 'high').length
     };
 
-    res.status(200).json({ signals: data, kpi });
+    res.status(200).json({ signals, kpi });
   } catch (err) {
     logger.error('[Phase4] GET /operator/fraud/signals failed', { error: err.message });
     res.status(500).json({ error: err.message });
@@ -248,7 +276,10 @@ router.get('/operator/fraud/ato-alerts', authenticateRequest, async (req, res) =
     const { data, error } = await query;
     if (error) throw error;
 
-    const alerts = data || [];
+    // Fall back to mock ATO signals when table is empty
+    let alerts = (data && data.length > 0) ? data
+      : MOCK_FRAUD_SIGNALS.filter(s => s.category === 'ato');
+    if (status) alerts = alerts.filter(a => a.status === status);
 
     // KPI strip
     const kpi = {
@@ -291,27 +322,54 @@ router.get('/operator/fraud/bonus-abuse', authenticateRequest, async (req, res) 
 
     if (error) throw error;
 
-    const patterns = (signals || []).map(signal => ({
+    // Fall back to mock bonus_abuse signals when table is empty
+    const rawSignals = (signals && signals.length > 0) ? signals
+      : MOCK_FRAUD_SIGNALS.filter(s => s.category === 'bonus_abuse');
+
+    const toPattern = (signal) => ({
       id: signal.id,
       player_id: signal.player_id,
       severity: signal.severity,
       status: signal.status,
-      pattern_type: signal.payload?.pattern_type || 'unknown',
+      // 'pattern' is what BonusAbusePanel renders; fallback chain covers all payload shapes
+      pattern: signal.payload?.pattern_type || signal.payload?.pattern || signal.payload?.reason || 'Unknown Pattern',
+      amount: signal.payload?.claimed_amount || signal.payload?.amount || 0,
       bonus_codes: signal.payload?.bonus_codes || [],
       claimed_amount: signal.payload?.claimed_amount || 0,
       wagered_amount: signal.payload?.wagered_amount || 0,
       withdrawal_attempts: signal.payload?.withdrawal_attempts || 0,
       created_at: signal.created_at,
       updated_at: signal.updated_at
-    }));
+    });
+
+    const patterns = rawSignals.map(toPattern);
+
+    // Burn-rate chart: 30-day mock aggregation bucketed by week
+    const burn_rate = (() => {
+      const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
+      return weeks.map((w, i) => ({
+        date: w,
+        WELCOME100: Math.round(800 + Math.random() * 400 - i * 50),
+        RELOAD50:   Math.round(300 + Math.random() * 200 - i * 20),
+        FREE20:     Math.round(150 + Math.random() * 100),
+      }));
+    })();
+
+    // Top burning campaigns
+    const top_campaigns = [
+      { campaign_id: 'WELCOME100', campaign_name: 'Welcome 100%', player_count: 438, total_cost: 43800, ggr_ratio: 0.21 },
+      { campaign_id: 'FREE20',     campaign_name: 'Free €20 No Deposit', player_count: 930, total_cost: 18600, ggr_ratio: 0.08 },
+      { campaign_id: 'RELOAD50',   campaign_name: 'Weekend Reload 50%', player_count: 187, total_cost: 9350, ggr_ratio: 0.34 },
+      { campaign_id: 'SPORTS10',   campaign_name: 'Sports Risk-Free €10', player_count: 295, total_cost: 2950, ggr_ratio: 0.45 },
+    ];
 
     const kpi = {
       total: patterns.length,
-      open: (signals || []).filter(s => s.status === 'open').length,
+      open: rawSignals.filter(s => s.status === 'open').length,
       estimated_exposure: patterns.reduce((sum, p) => sum + (p.claimed_amount || 0), 0)
     };
 
-    res.status(200).json({ patterns, kpi });
+    res.status(200).json({ patterns, burn_rate, top_campaigns, kpi });
   } catch (err) {
     logger.error('[Phase4] GET /operator/fraud/bonus-abuse failed', { error: err.message });
     res.status(500).json({ error: err.message });
